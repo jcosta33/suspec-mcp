@@ -87,6 +87,26 @@ describe('build_envelope', () => {
         }
     });
 
+    it('surfaces selfReport.runSummaryUnparsed as a human-attention item (#44 — CLI/TUI parity)', () => {
+        // When the run summary parses to no machine-checkable paths, the CLI suppresses inDiffNotClaimed
+        // and notes it once; the MCP triage list must carry the same note rather than silently dropping it.
+        const unparsed = {
+            level: 'clean',
+            task: 'feat',
+            diffChangedFiles: ['src/x.ts', 'src/y.ts'],
+            coverage: [],
+            verifyBinding: [],
+            scopeDivergence: [],
+            selfReport: { claimedNotInDiff: [], inDiffNotClaimed: [], outsideScope: [], runSummaryUnparsed: true },
+            doNotChangeTouched: [],
+            emptyEvidencePassRows: [],
+            packetStructural: { badResultCells: [], badStatus: null, statusPassContradicted: false, missingSections: [] },
+            hasReviewPacket: true,
+        };
+        const att = build_envelope(okResult(unparsed), 'review').derived?.humanAttention ?? [];
+        expect(att.some((a) => a.includes('no machine-checkable file paths'))).toBe(true);
+    });
+
     it('surfaces a structured CLI error (no worktree) as ok:false with a note, not a throw', () => {
         const env = build_envelope(
             { kind: 'structured-error', invocation: { command: 'swarm review x --json', exitCode: 2 }, error: { error: 'Usage', message: 'no worktree found for x' } },

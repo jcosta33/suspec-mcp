@@ -58,6 +58,11 @@ function derive_human_attention(report: ReviewReport): string[] {
     for (const f of report.selfReport.inDiffNotClaimed) {
         items.push(`changed in the diff but not claimed: ${f}`);
     }
+    if (report.selfReport.runSummaryUnparsed === true) {
+        items.push(
+            'run summary lists no machine-checkable file paths — selfReport reconcile skipped (list changed files as backticked paths to enable it)'
+        );
+    }
     for (const f of report.selfReport.outsideScope) {
         items.push(`changed outside the task's affected areas: ${f}`);
     }
