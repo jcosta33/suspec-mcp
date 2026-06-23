@@ -1,60 +1,60 @@
 {
-    "name": "swarm-mcp",
-    "version": "0.1.0",
-    "description": "An MCP stdio server that exposes Swarm's read + reconcile facts to agent clients — a thin adapter over the `swarm` CLI's --json contract. Read-only, reconcile-only, issues no verdict.",
-    "type": "module",
-    "license": "MIT",
-    "author": "José Costa",
-    "homepage": "https://github.com/jcosta33/swarm-mcp#readme",
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/jcosta33/swarm-mcp.git"
-    },
-    "bugs": {
-        "url": "https://github.com/jcosta33/swarm-mcp/issues"
-    },
-    "keywords": [
-        "mcp",
-        "model-context-protocol",
-        "swarm",
-        "code-review",
-        "agents",
-        "claude"
-    ],
-    "bin": {
-        "swarm-mcp": "./bin/swarm-mcp.js"
-    },
-    "files": [
-        "dist",
-        "bin",
-        "README.md",
-        "LICENSE"
-    ],
-    "scripts": {
-        "build": "esbuild src/index.ts --bundle --platform=node --format=esm --packages=external --target=node18 --outfile=dist/index.js",
-        "prepack": "pnpm run build",
-        "test": "vitest",
-        "test:run": "vitest run",
-        "coverage": "vitest run --coverage",
-        "typecheck": "tsc --noEmit",
-        "lint": "eslint --cache --cache-location node_modules/.cache/eslint/ \"src/**/*.ts\"",
-        "gate": "pnpm run typecheck && pnpm run lint && pnpm run coverage && pnpm run build"
-    },
-    "dependencies": {
-        "@modelcontextprotocol/sdk": "^1.29.0",
-        "zod": "^3.25.0"
-    },
-    "devDependencies": {
-        "@eslint/js": "^10.0.1",
-        "@types/node": "^22.0.0",
-        "@vitest/coverage-v8": "^3.2.6",
-        "esbuild": "^0.25.0",
-        "eslint": "^10.5.0",
-        "typescript": "^5.7.0",
-        "typescript-eslint": "^8.61.1",
-        "vitest": "^3.0.0"
-    },
-    "engines": {
-        "node": ">=18.18.0"
-    }
+  "name": "corpus-mcp",
+  "version": "0.1.0",
+  "description": "An MCP stdio server that exposes Corpus's read + reconcile facts to agent clients — a thin adapter over the `corpus` CLI's --json contract. Read-only, reconcile-only, issues no verdict.",
+  "type": "module",
+  "license": "MIT",
+  "author": "José Costa",
+  "homepage": "https://github.com/jcosta33/corpus-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jcosta33/corpus-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jcosta33/corpus-mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "corpus",
+    "code-review",
+    "agents",
+    "claude"
+  ],
+  "bin": {
+    "corpus-mcp": "./bin/corpus-mcp.js"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --packages=external --target=node18 --outfile=dist/index.js",
+    "prepack": "pnpm run build",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint --cache --cache-location node_modules/.cache/eslint/ \"src/**/*.ts\"",
+    "gate": "pnpm run typecheck && pnpm run lint && pnpm run coverage && pnpm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^3.2.6",
+    "esbuild": "^0.25.0",
+    "eslint": "^10.5.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.61.1",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  }
 }

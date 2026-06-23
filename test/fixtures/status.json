@@ -1,1 +1,97 @@
-{"level":"clean","specs":[{"id":"SPEC-baseline-cleanup","status":"ready","tasks":[{"id":"TASK-baseline-cleanup","status":"ready","hasReview":true,"reviewStatus":"pass"}]},{"id":"SPEC-change-plan-checks","status":"ready","tasks":[{"id":"TASK-change-plan-checks","status":"ready","hasReview":true,"reviewStatus":"pass"}]},{"id":"SPEC-cli-surface-scoping","status":"ready","tasks":[{"id":"TASK-cli-surface-map","status":"ready","hasReview":true,"reviewStatus":"pass"}]},{"id":"SPEC-doc-cli-convergence","status":"ready","tasks":[{"id":"TASK-doc-cli-convergence","status":"ready","hasReview":true,"reviewStatus":"pass"}]},{"id":"SPEC-dx-remediation","status":"ready","tasks":[]},{"id":"SPEC-multi-repo-workspace","status":"ready","tasks":[]},{"id":"SPEC-swarm-cli-m1","status":"ready","tasks":[]},{"id":"SPEC-swarm-cli-m2-review","status":"ready","tasks":[]},{"id":"SPEC-swarm-cli-m3-prepare","status":"ready","tasks":[{"id":"TASK-swarm-cli-m3-prepare","status":"ready","hasReview":true,"reviewStatus":"pass"}]},{"id":"SPEC-swarm-cli-m4-verify-reconcile","status":"ready","tasks":[{"id":"TASK-swarm-cli-m4-verify-reconcile","status":"ready","hasReview":true,"reviewStatus":"pass"}]},{"id":"SPEC-swarm-cli-m4b-draft-writer","status":"ready","tasks":[{"id":"TASK-swarm-cli-m4b-draft-writer","status":"ready","hasReview":true,"reviewStatus":"pass"}]},{"id":"SPEC-swarm-cli-run","status":"done","tasks":[]},{"id":"SPEC-verify-evidence-reconcile","status":"ready","tasks":[]}],"tasksWithoutReview":[],"needsHuman":[]}
+{
+  "level": "clean",
+  "specs": [
+    {
+      "id": "SPEC-baseline-cleanup",
+      "status": "ready",
+      "tasks": [
+        {
+          "id": "TASK-baseline-cleanup",
+          "status": "ready",
+          "hasReview": true,
+          "reviewStatus": "pass"
+        }
+      ]
+    },
+    {
+      "id": "SPEC-change-plan-checks",
+      "status": "ready",
+      "tasks": [
+        {
+          "id": "TASK-change-plan-checks",
+          "status": "ready",
+          "hasReview": true,
+          "reviewStatus": "pass"
+        }
+      ]
+    },
+    {
+      "id": "SPEC-cli-surface-scoping",
+      "status": "ready",
+      "tasks": [
+        {
+          "id": "TASK-cli-surface-map",
+          "status": "ready",
+          "hasReview": true,
+          "reviewStatus": "pass"
+        }
+      ]
+    },
+    {
+      "id": "SPEC-doc-cli-convergence",
+      "status": "ready",
+      "tasks": [
+        {
+          "id": "TASK-doc-cli-convergence",
+          "status": "ready",
+          "hasReview": true,
+          "reviewStatus": "pass"
+        }
+      ]
+    },
+    { "id": "SPEC-dx-remediation", "status": "ready", "tasks": [] },
+    { "id": "SPEC-multi-repo-workspace", "status": "ready", "tasks": [] },
+    { "id": "SPEC-corpus-cli-m1", "status": "ready", "tasks": [] },
+    { "id": "SPEC-corpus-cli-m2-review", "status": "ready", "tasks": [] },
+    {
+      "id": "SPEC-corpus-cli-m3-prepare",
+      "status": "ready",
+      "tasks": [
+        {
+          "id": "TASK-corpus-cli-m3-prepare",
+          "status": "ready",
+          "hasReview": true,
+          "reviewStatus": "pass"
+        }
+      ]
+    },
+    {
+      "id": "SPEC-corpus-cli-m4-verify-reconcile",
+      "status": "ready",
+      "tasks": [
+        {
+          "id": "TASK-corpus-cli-m4-verify-reconcile",
+          "status": "ready",
+          "hasReview": true,
+          "reviewStatus": "pass"
+        }
+      ]
+    },
+    {
+      "id": "SPEC-corpus-cli-m4b-draft-writer",
+      "status": "ready",
+      "tasks": [
+        {
+          "id": "TASK-corpus-cli-m4b-draft-writer",
+          "status": "ready",
+          "hasReview": true,
+          "reviewStatus": "pass"
+        }
+      ]
+    },
+    { "id": "SPEC-corpus-cli-run", "status": "done", "tasks": [] },
+    { "id": "SPEC-verify-evidence-reconcile", "status": "ready", "tasks": [] }
+  ],
+  "tasksWithoutReview": [],
+  "needsHuman": []
+}

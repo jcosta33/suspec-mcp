@@ -1,1 +1,89 @@
-{"level":"clean","verdict":"clean","specs":[{"path":"/Users/josecosta/dev/swarm-hq/specs/baseline-cleanup/spec.md","level":"clean","diagnostics":[]},{"path":"/Users/josecosta/dev/swarm-hq/specs/change-plan-checks/spec.md","level":"clean","diagnostics":[]},{"path":"/Users/josecosta/dev/swarm-hq/specs/cli-surface-scoping/spec.md","level":"clean","diagnostics":[]},{"path":"/Users/josecosta/dev/swarm-hq/specs/doc-cli-convergence/spec.md","level":"clean","diagnostics":[]},{"path":"/Users/josecosta/dev/swarm-hq/specs/dx-remediation/spec.md","level":"clean","diagnostics":[]},{"path":"/Users/josecosta/dev/swarm-hq/specs/multi-repo-workspace/spec.md","level":"clean","diagnostics":[]},{"path":"/Users/josecosta/dev/swarm-hq/specs/swarm-cli-m1/spec.md","level":"clean","diagnostics":[]},{"path":"/Users/josecosta/dev/swarm-hq/specs/swarm-cli-m2-review/spec.md","level":"clean","diagnostics":[]},{"path":"/Users/josecosta/dev/swarm-hq/specs/swarm-cli-m3-prepare/spec.md","level":"clean","diagnostics":[]},{"path":"/Users/josecosta/dev/swarm-hq/specs/swarm-cli-m4-verify-reconcile/spec.md","level":"clean","diagnostics":[]},{"path":"/Users/josecosta/dev/swarm-hq/specs/swarm-cli-m4b-draft-writer/spec.md","level":"clean","diagnostics":[]},{"path":"/Users/josecosta/dev/swarm-hq/specs/swarm-cli-run/spec.md","level":"clean","diagnostics":[]},{"path":"/Users/josecosta/dev/swarm-hq/specs/verify-evidence-reconcile/spec.md","level":"clean","diagnostics":[]}],"changePlans":[{"level":"clean","path":"/Users/josecosta/dev/swarm-hq/change-plans/adoption-experience-remediation.md","diagnostics":[]},{"level":"clean","path":"/Users/josecosta/dev/swarm-hq/change-plans/dx-remediation-formats.md","diagnostics":[]},{"level":"clean","path":"/Users/josecosta/dev/swarm-hq/change-plans/swarm-dogfood-waves.md","diagnostics":[]}],"workspaceFindings":[]}
+{
+  "level": "clean",
+  "verdict": "clean",
+  "specs": [
+    {
+      "path": "/Users/josecosta/dev/corpus-hq/specs/baseline-cleanup/spec.md",
+      "level": "clean",
+      "diagnostics": []
+    },
+    {
+      "path": "/Users/josecosta/dev/corpus-hq/specs/change-plan-checks/spec.md",
+      "level": "clean",
+      "diagnostics": []
+    },
+    {
+      "path": "/Users/josecosta/dev/corpus-hq/specs/cli-surface-scoping/spec.md",
+      "level": "clean",
+      "diagnostics": []
+    },
+    {
+      "path": "/Users/josecosta/dev/corpus-hq/specs/doc-cli-convergence/spec.md",
+      "level": "clean",
+      "diagnostics": []
+    },
+    {
+      "path": "/Users/josecosta/dev/corpus-hq/specs/dx-remediation/spec.md",
+      "level": "clean",
+      "diagnostics": []
+    },
+    {
+      "path": "/Users/josecosta/dev/corpus-hq/specs/multi-repo-workspace/spec.md",
+      "level": "clean",
+      "diagnostics": []
+    },
+    {
+      "path": "/Users/josecosta/dev/corpus-hq/specs/corpus-cli-m1/spec.md",
+      "level": "clean",
+      "diagnostics": []
+    },
+    {
+      "path": "/Users/josecosta/dev/corpus-hq/specs/corpus-cli-m2-review/spec.md",
+      "level": "clean",
+      "diagnostics": []
+    },
+    {
+      "path": "/Users/josecosta/dev/corpus-hq/specs/corpus-cli-m3-prepare/spec.md",
+      "level": "clean",
+      "diagnostics": []
+    },
+    {
+      "path": "/Users/josecosta/dev/corpus-hq/specs/corpus-cli-m4-verify-reconcile/spec.md",
+      "level": "clean",
+      "diagnostics": []
+    },
+    {
+      "path": "/Users/josecosta/dev/corpus-hq/specs/corpus-cli-m4b-draft-writer/spec.md",
+      "level": "clean",
+      "diagnostics": []
+    },
+    {
+      "path": "/Users/josecosta/dev/corpus-hq/specs/corpus-cli-run/spec.md",
+      "level": "clean",
+      "diagnostics": []
+    },
+    {
+      "path": "/Users/josecosta/dev/corpus-hq/specs/verify-evidence-reconcile/spec.md",
+      "level": "clean",
+      "diagnostics": []
+    }
+  ],
+  "changePlans": [
+    {
+      "level": "clean",
+      "path": "/Users/josecosta/dev/corpus-hq/change-plans/adoption-experience-remediation.md",
+      "diagnostics": []
+    },
+    {
+      "level": "clean",
+      "path": "/Users/josecosta/dev/corpus-hq/change-plans/dx-remediation-formats.md",
+      "diagnostics": []
+    },
+    {
+      "level": "clean",
+      "path": "/Users/josecosta/dev/corpus-hq/change-plans/corpus-dogfood-waves.md",
+      "diagnostics": []
+    }
+  ],
+  "workspaceFindings": []
+}
