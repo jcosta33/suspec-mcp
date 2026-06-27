@@ -2,8 +2,8 @@
 // A stub `corpus` binary for deterministic, offline corpus-mcp tests. Records every invocation's argv to
 // STUB_LOG (so tests can assert which subprocesses ran / that no write flag was ever passed) and emits
 // fixture JSON to stdout keyed off the verb — mirroring the real CLI's --json shapes.
-import { appendFileSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { join, dirname } from "node:path";
 
 const argv = process.argv.slice(2);
 if (process.env.STUB_LOG) {
@@ -182,6 +182,68 @@ if (verb === "status") {
     );
     process.exit(2);
   }
+} else if (verb === "new") {
+  // The verdict-free safe-write tier: `new spec <slug>` and `new task --from <SPEC> [--scope …]`. The
+  // stub WRITES a scaffold file (mirroring the real CLI) so the safe-write test can assert one appeared,
+  // then emits the report shape. It never overwrites and never emits a verdict.
+  const type = positionals[0];
+  const flag = (name) => {
+    const i = argv.indexOf(name);
+    return i >= 0 ? argv[i + 1] : undefined;
+  };
+  if (type === "spec") {
+    const slug = positionals[1];
+    if (!slug) {
+      process.stdout.write(
+        JSON.stringify({ error: "Usage", message: "new spec needs a slug" }),
+      );
+      process.exit(2);
+    }
+    const path = join(process.cwd(), "specs", slug, "spec.md");
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, `---\ntype: spec\nid: SPEC-${slug}\n---\n# ${slug}\n`);
+    emit({ level: "clean", path, specId: `SPEC-${slug}` });
+  } else if (type === "task") {
+    const from = flag("--from");
+    if (!from) {
+      process.stdout.write(
+        JSON.stringify({
+          error: "Usage",
+          message: "new task needs --from <SPEC-id>",
+        }),
+      );
+      process.exit(2);
+    }
+    const scopeFlag = flag("--scope");
+    const scope =
+      typeof scopeFlag === "string" && scopeFlag.length > 0
+        ? scopeFlag.split(",")
+        : [];
+    const taskId = `TASK-${from.replace(/^SPEC-/i, "").toLowerCase()}`;
+    const path = join(process.cwd(), "tasks", `${taskId}.md`);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, `---\ntype: task\nid: ${taskId}\nsource: ${from}\n---\n`);
+    emit({ level: "clean", path, taskId, scope });
+  } else {
+    process.stdout.write(
+      JSON.stringify({ error: "Usage", message: `unknown new type: ${type}` }),
+    );
+    process.exit(2);
+  }
+} else if (verb === "promote") {
+  // `promote <task>` scaffolds one candidate finding (no learning asserted, no board, no verdict).
+  const task = positionals[0];
+  if (!task) {
+    process.stdout.write(
+      JSON.stringify({ error: "Usage", message: "promote needs a task id" }),
+    );
+    process.exit(2);
+  }
+  const slug = task.replace(/^(?:TASK|REVIEW|AUDIT|INV)-/i, "").toLowerCase();
+  const path = join(process.cwd(), "findings", `${slug}.md`);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `---\ntype: finding\nid: FINDING-${slug}\nstatus: candidate\nfrom: ${task}\n---\n`);
+  emit({ level: "clean", path, slug, from: task });
 } else {
   process.stdout.write(
     JSON.stringify({ error: "Usage", message: `unknown verb: ${verb}` }),

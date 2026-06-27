@@ -1,7 +1,7 @@
 {
   "name": "corpus-mcp",
-  "version": "0.1.0",
-  "description": "An MCP stdio server that exposes Corpus's read + reconcile facts to agent clients — a thin adapter over the `corpus` CLI's --json contract. Read-only, reconcile-only, issues no verdict.",
+  "version": "0.2.0",
+  "description": "An MCP stdio server that gives agent clients Corpus's read + reconcile facts under a no-verdict envelope, plus a verdict-free safe-write tier (scaffold spec/task/finding) — built for non-terminal clients (Claude Desktop, Cursor) without a shell. Reconcile-only, issues no verdict.",
   "type": "module",
   "license": "MIT",
   "author": "José Costa",
@@ -37,6 +37,7 @@
     "test:run": "vitest run",
     "coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
+    "fixtures": "node scripts/generate-fixtures.mjs",
     "lint": "eslint --cache --cache-location node_modules/.cache/eslint/ \"src/**/*.ts\"",
     "gate": "pnpm run typecheck && pnpm run lint && pnpm run coverage && pnpm run build"
   },

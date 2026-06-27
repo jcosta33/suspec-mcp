@@ -1,1 +1,27 @@
-{"level":"clean","kind":"task","value":{"id":"TASK-cli-surface-map","source":"SPEC-cli-surface-scoping","status":"ready","scope":["AC-001","AC-002","AC-003","AC-004","AC-005","AC-006","AC-007"],"affectedAreas":["README.md","docs/ADOPTING.md","docs/reference/checks.md","docs/reference/future-cli.md","specs/cli-surface-scoping/audit.md","src/index.ts","src/modules/Commands/useCases/catalog.ts"],"doNotChange":["checks.yaml","corpus run","corpus spec check","future-cli.md"],"claimedChangedFiles":[],"embeddedSpecId":null,"embeddedRequirements":[]}}
+{
+  "level": "clean",
+  "kind": "task",
+  "value": {
+    "id": "TASK-demo-feature",
+    "source": "SPEC-demo-feature",
+    "status": "ready",
+    "scope": [
+      "AC-001",
+      "AC-002"
+    ],
+    "affectedAreas": [],
+    "doNotChange": [],
+    "claimedChangedFiles": [],
+    "embeddedSpecId": "SPEC-demo-feature",
+    "embeddedRequirements": [
+      {
+        "id": "AC-001",
+        "verifyCommand": null
+      },
+      {
+        "id": "AC-002",
+        "verifyCommand": null
+      }
+    ]
+  }
+}

@@ -1,1 +1,39 @@
-{"level":"clean","kind":"spec","value":{"frontmatter":{"type":"spec","id":"SPEC-spec-staleness-detection","status":"active","format":null,"sources":["ADR-0108","ADR-0106","RESEARCH-living-specs"],"supersededBy":null,"snapshot":null},"requirements":[{"id":"AC-001","line":37,"verifyCommand":"`corpus check specs/<f>/spec.md` surfaces no missing-snapshot advisory once D1 ships."},{"id":"AC-002","line":45,"verifyCommand":"a fixture spec whose Affected area changed after its snapshot SHA → one `spec-staleness`"},{"id":"AC-003","line":54,"verifyCommand":"the fixture above asserts the area path + the short SHA appear in the message."},{"id":"AC-004","line":61,"verifyCommand":"a draft fixture with a stale snapshot → zero `spec-staleness` findings."},{"id":"AC-005","line":68,"verifyCommand":"`git grep spec-staleness corpus/checks/checks.yaml` is empty; the finding code is non-C."}],"sectionTitles":["Intent","Non-goals","Requirements","Open questions","Affected areas","Dropped from sources","Execution"],"openQuestionsPresent":true,"execution":"<!-- Append-only run record (ADR-0103). -->\n\n- **2026-06-26 — v0 shipped** (corpus-cli `f53da68`, kit `cc037cc`). `corpus check --staleness` diffs\n  each snapshotted spec's Affected areas against its `snapshot:` SHA and flags drift. Covers **AC-001**\n  (D1 → frontmatter `snapshot:`, see above), **AC-002** (the `--staleness` advisory), **AC-003** (names\n  the drifted areas + the short SHA), **AC-004** (draft specs skipped), **AC-005** (advisory only — no\n  `checks.yaml`, opt-in flag, never blocking).\n  - D2 → **(a) Affected-areas paths** (recommended); D3 → **(a) any change = stale** (recommended).\n  - Affected areas: `corpus-cli` — `parseSpecRecord` (`snapshot:` field), `Workspace/git`\n    (`paths_changed_since`), new `Core/scanSpecStaleness`, `Commands/check` (`--staleness`); `kit` +\n    `corpus-works` spec templates (the `snapshot:` convention).\n  - Verify results: `pnpm typecheck` ✓ · `pnpm vitest run --coverage` 801 tests ✓ (98.52/94.26/99.54/98.51)\n    · `pnpm lint` ✓ · `pnpm deps:validate` ✓ (92 modules). 9 new tests (6 use-case over a real git repo, 3 command).\n  - **0-FP by construction:** draft / no-snapshot / unresolvable-SHA / no-git / cross-root-area all skip.\n  - **Deferred:** the **cross-root** case (a spec whose areas live in a sibling repo — the corpus-works\n    dogfood layout) needs per-area repo resolution → tracked under corpus-cli#2. The convention also\n    needs the spec authoring guide to instruct stamping the SHA on amendment (follow-up).\n  - Spec now `active` (shipped). D1 resolved as the frontmatter `snapshot:` field; the owner may amend\n    to the `## Execution`-SHA form (option b) later as a living-spec change.\n- **2026-06-26 — now LIVE: `corpus stamp` shipped** (corpus-cli `c04d309`). `corpus stamp <spec>` writes\n  `snapshot:` = the code repo's HEAD, so staleness detection is no longer dormant — stamp a spec, then\n  `corpus check --staleness` flags it when its areas drift. (D1 = frontmatter `snapshot:`, owner-confirmed.)"}}
+{
+  "level": "clean",
+  "kind": "spec",
+  "value": {
+    "frontmatter": {
+      "type": "spec",
+      "id": "SPEC-demo-feature",
+      "status": "ready",
+      "format": null,
+      "sources": [
+        "self"
+      ],
+      "supersededBy": null,
+      "snapshot": null
+    },
+    "requirements": [
+      {
+        "id": "AC-001",
+        "line": 23,
+        "verifyCommand": "`first test`"
+      },
+      {
+        "id": "AC-002",
+        "line": 29,
+        "verifyCommand": "`second test`"
+      }
+    ],
+    "sectionTitles": [
+      "Intent",
+      "Non-goals",
+      "Requirements",
+      "Open questions",
+      "Affected areas",
+      "Dropped from sources"
+    ],
+    "openQuestionsPresent": true,
+    "execution": null
+  }
+}

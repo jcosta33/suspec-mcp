@@ -47,8 +47,8 @@ export function register_prompts(server: McpServer): void {
     ({ task }) =>
       user_text(
         `Before you claim ${task} is ready for review:\n\n` +
-          `1. Call corpus_scan_task (reconcile against the diff).\n` +
-          `2. Call corpus_reconcile_review, and corpus_validate_review_packet if a review packet exists.\n` +
+          `1. Call corpus_reconcile (it reconciles against the diff whether or not a review packet exists yet).\n` +
+          `2. Call corpus_check_file on the review packet if one exists (the C012/C013 review-file checks).\n` +
           `3. Fix or report every coverage gap, out-of-scope change, and empty-evidence Pass row it surfaces.\n` +
           `4. Leave a run summary: changed files, the verify output, out-of-scope edits, candidate findings.\n\n` +
           `You MAY say the work is "ready for review."\n` +
@@ -68,9 +68,9 @@ export function register_prompts(server: McpServer): void {
     ({ task }) =>
       user_text(
         `You are reviewing work on ${task} that you did NOT author.\n\n` +
-          `Call corpus_get_task, corpus_get_spec, corpus_scan_task, and corpus_reconcile_review and RE-DERIVE the ` +
-          `facts yourself. A clean reconcile from the implementer is a starting point to falsify, not a result ` +
-          `to trust — the implementer may have pre-fixed the mechanical drift; verify, do not assume.\n\n` +
+          `Call corpus_get_task, corpus_get_spec, and corpus_reconcile and RE-DERIVE the facts yourself. A clean ` +
+          `reconcile from the implementer is a starting point to falsify, not a result to trust — the implementer ` +
+          `may have pre-fixed the mechanical drift; verify, do not assume.\n\n` +
           `Every Pass row must cite evidence; an empty Evidence cell is Unverified. Route exceptions to Human ` +
           `attention. Do not edit source code. Do not approve an implementation you authored.`,
       ),
@@ -102,9 +102,13 @@ export function register_prompts(server: McpServer): void {
     () =>
       user_text(
         `Draft a candidate finding from the durable fact you discovered:\n\n` +
-          `- one claim\n- the evidence for it\n- where it applies\n- where it does NOT apply\n- the future guidance\n\n` +
-          `Set status to "candidate", never "accepted" — acceptance is the owner's. If the fact implies required ` +
-          `behavior, note that a spec amendment is owed.`,
+          `1. Call corpus_scaffold_finding (from: the finished task/review id) to create the ` +
+          `findings/<slug>.md skeleton — a verdict-free prepare op (it pre-fills \`from:\`, asserts no ` +
+          `learning, writes no board).\n` +
+          `2. Fill what we learned: one claim, the evidence for it, where it applies, where it does NOT apply, ` +
+          `the future guidance.\n\n` +
+          `Leave status as "candidate", never "accepted" — acceptance is the owner's. If the fact implies ` +
+          `required behavior, note that a spec amendment is owed.`,
       ),
   );
 }

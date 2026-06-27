@@ -9,7 +9,7 @@ import { register_resources } from "./resources.ts";
 import { register_prompts } from "./prompts.ts";
 
 export function create_server(ctx: Ctx): McpServer {
-  const server = new McpServer({ name: "corpus-mcp", version: "0.1.0" });
+  const server = new McpServer({ name: "corpus-mcp", version: "0.2.0" });
   register_tools(server, ctx);
   register_resources(server, ctx);
   register_prompts(server);

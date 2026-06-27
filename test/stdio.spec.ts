@@ -40,7 +40,9 @@ describe("real stdio transport (AC-001)", () => {
       const tools = (await client.listTools()).tools.map((t) => t.name);
       expect(tools).toContain("corpus_get_status");
       expect(tools).toContain("corpus_get_task");
-      expect(tools).toHaveLength(10);
+      expect(tools).toContain("corpus_reconcile");
+      expect(tools).toContain("corpus_scaffold_spec");
+      expect(tools).toHaveLength(12);
 
       const result = (await client.callTool({
         name: "corpus_get_status",

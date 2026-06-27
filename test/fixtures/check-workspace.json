@@ -1,89 +1,24 @@
 {
-  "level": "clean",
+  "level": "warning",
   "verdict": "clean",
   "specs": [
     {
-      "path": "/Users/josecosta/dev/corpus-works/specs/baseline-cleanup/spec.md",
+      "path": "/private/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/corpus-mcp-fixtures-d1cGrb/specs/demo-feature/spec.md",
       "level": "clean",
       "diagnostics": []
     },
     {
-      "path": "/Users/josecosta/dev/corpus-works/specs/change-plan-checks/spec.md",
-      "level": "clean",
-      "diagnostics": []
-    },
-    {
-      "path": "/Users/josecosta/dev/corpus-works/specs/cli-surface-scoping/spec.md",
-      "level": "clean",
-      "diagnostics": []
-    },
-    {
-      "path": "/Users/josecosta/dev/corpus-works/specs/doc-cli-convergence/spec.md",
-      "level": "clean",
-      "diagnostics": []
-    },
-    {
-      "path": "/Users/josecosta/dev/corpus-works/specs/dx-remediation/spec.md",
-      "level": "clean",
-      "diagnostics": []
-    },
-    {
-      "path": "/Users/josecosta/dev/corpus-works/specs/multi-repo-workspace/spec.md",
-      "level": "clean",
-      "diagnostics": []
-    },
-    {
-      "path": "/Users/josecosta/dev/corpus-works/specs/corpus-cli-m1/spec.md",
-      "level": "clean",
-      "diagnostics": []
-    },
-    {
-      "path": "/Users/josecosta/dev/corpus-works/specs/corpus-cli-m2-review/spec.md",
-      "level": "clean",
-      "diagnostics": []
-    },
-    {
-      "path": "/Users/josecosta/dev/corpus-works/specs/corpus-cli-m3-prepare/spec.md",
-      "level": "clean",
-      "diagnostics": []
-    },
-    {
-      "path": "/Users/josecosta/dev/corpus-works/specs/corpus-cli-m4-verify-reconcile/spec.md",
-      "level": "clean",
-      "diagnostics": []
-    },
-    {
-      "path": "/Users/josecosta/dev/corpus-works/specs/corpus-cli-m4b-draft-writer/spec.md",
-      "level": "clean",
-      "diagnostics": []
-    },
-    {
-      "path": "/Users/josecosta/dev/corpus-works/specs/corpus-cli-run/spec.md",
-      "level": "clean",
-      "diagnostics": []
-    },
-    {
-      "path": "/Users/josecosta/dev/corpus-works/specs/verify-evidence-reconcile/spec.md",
+      "path": "/private/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/corpus-mcp-fixtures-d1cGrb/specs/prep-demo/spec.md",
       "level": "clean",
       "diagnostics": []
     }
   ],
-  "changePlans": [
+  "changePlans": [],
+  "workspaceFindings": [
     {
-      "level": "clean",
-      "path": "/Users/josecosta/dev/corpus-works/change-plans/adoption-experience-remediation.md",
-      "diagnostics": []
-    },
-    {
-      "level": "clean",
-      "path": "/Users/josecosta/dev/corpus-works/change-plans/dx-remediation-formats.md",
-      "diagnostics": []
-    },
-    {
-      "level": "clean",
-      "path": "/Users/josecosta/dev/corpus-works/change-plans/corpus-dogfood-waves.md",
-      "diagnostics": []
+      "code": "placeholder",
+      "level": "warning",
+      "message": "AGENTS.md still has the kit's {{placeholder}}s (lines 30, 34, 35, 36, 45, 46, 47, 48) — fill them in before relying on the workspace"
     }
-  ],
-  "workspaceFindings": []
+  ]
 }

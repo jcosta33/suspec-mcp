@@ -103,16 +103,14 @@ afterEach(() => {
   }
 });
 
+// The READ + RECONCILE tier (the read-only sweep). The SAFE-WRITE tier (scaffold_*/split_task) is
+// exercised separately — it legitimately writes a scaffold, so it must NOT be in the no-write sweep.
 const ALL_TOOL_CALLS = [
   { name: "corpus_get_status", arguments: {} },
+  { name: "corpus_list", arguments: { kind: "specs" } },
   { name: "corpus_check_workspace", arguments: {} },
   { name: "corpus_check_file", arguments: { path: "specs/a/spec.md" } },
-  { name: "corpus_scan_task", arguments: { task: "feat" } },
-  { name: "corpus_reconcile_review", arguments: { task: "feat" } },
-  {
-    name: "corpus_validate_review_packet",
-    arguments: { review: "specs/a/spec.md" },
-  },
+  { name: "corpus_reconcile", arguments: { task: "feat" } },
   { name: "corpus_get_task", arguments: { task: "feat" } },
   { name: "corpus_get_spec", arguments: { spec: "SPEC-feat" } },
   { name: "corpus_get_review", arguments: { task: "feat" } },
@@ -120,12 +118,13 @@ const ALL_TOOL_CALLS = [
 ];
 
 describe("corpus-mcp server", () => {
-  it("lists the v0 read/reconcile tools and resources", async () => {
+  it("lists the read + reconcile + safe-write tools and resources", async () => {
     const { client, close } = await connectClient();
     try {
       const tools = (await client.listTools()).tools.map((t) => t.name).sort();
       expect(tools).toEqual(
         [
+          // read tier
           "corpus_check_file",
           "corpus_check_workspace",
           "corpus_get_checks",
@@ -133,9 +132,13 @@ describe("corpus-mcp server", () => {
           "corpus_get_spec",
           "corpus_get_status",
           "corpus_get_task",
-          "corpus_reconcile_review",
-          "corpus_scan_task",
-          "corpus_validate_review_packet",
+          "corpus_list",
+          // reconcile tier (one tool — AC-007)
+          "corpus_reconcile",
+          // safe-write tier (AC-009)
+          "corpus_scaffold_finding",
+          "corpus_scaffold_spec",
+          "corpus_split_task",
         ].sort(),
       );
       const resources = (await client.listResources()).resources
@@ -194,11 +197,11 @@ describe("corpus-mcp server", () => {
     }
   });
 
-  it("scan_task on a task with no worktree returns a structured not-runnable result, not an error", async () => {
+  it("reconcile on a task with no worktree returns a structured not-runnable result, not an error", async () => {
     const { client, close } = await connectClient();
     try {
       const r = (await client.callTool({
-        name: "corpus_scan_task",
+        name: "corpus_reconcile",
         arguments: { task: "noworktree" },
       })) as {
         isError?: boolean;
@@ -214,28 +217,41 @@ describe("corpus-mcp server", () => {
     }
   });
 
-  it("reconcile_review derives a human-attention list from the reconcile facts", async () => {
+  it("reconcile derives a STRUCTURED human-attention list from the reconcile facts (AC-010)", async () => {
     const { client, close } = await connectClient();
     try {
       const r = (await client.callTool({
-        name: "corpus_reconcile_review",
+        name: "corpus_reconcile",
         arguments: { task: "feat" },
       })) as {
-        structuredContent: { derived?: { humanAttention: string[] } };
+        structuredContent: {
+          derived?: {
+            humanAttention: {
+              category: string;
+              severity: string;
+              message: string;
+              ref: string | null;
+            }[];
+          };
+        };
       };
       const attention = r.structuredContent.derived?.humanAttention ?? [];
       expect(attention.length).toBeGreaterThan(0);
-      expect(attention.some((a) => a.includes("AC-002"))).toBe(true);
+      // structured items (AC-010): the uncovered AC-002 surfaces by ref + category, not a flat string.
+      const ac002 = attention.find((a) => a.ref === "AC-002");
+      expect(ac002?.category).toBe("coverage");
+      expect(ac002?.message).toContain("AC-002");
+      expect(["blocking", "warning", "info"]).toContain(ac002?.severity);
     } finally {
       await close();
     }
   });
 
-  it("reconcile_review accepts a `spec` id for the task-less 1:1 review-to-spec case, passed VERBATIM", async () => {
+  it("reconcile accepts a `spec` id for the task-less 1:1 review-to-spec case, passed VERBATIM", async () => {
     const { client, close } = await connectClient();
     try {
       const r = (await client.callTool({
-        name: "corpus_reconcile_review",
+        name: "corpus_reconcile",
         arguments: { spec: "SPEC-feat" },
       })) as { isError?: boolean; structuredContent: { ok: boolean } };
       expect(r.isError).toBeFalsy();
@@ -248,24 +264,24 @@ describe("corpus-mcp server", () => {
     }
   });
 
-  it("a review tool rejects passing neither task nor spec, and passing both (exactly one)", async () => {
+  it("reconcile rejects passing neither task nor spec, and passing both (exactly one)", async () => {
     const { client, close } = await connectClient();
     try {
       const neither = (await client.callTool({
-        name: "corpus_reconcile_review",
+        name: "corpus_reconcile",
         arguments: {},
       })) as { isError?: boolean; content: { text: string }[] };
       expect(neither.isError).toBe(true);
       expect(neither.content[0].text).toMatch(/exactly one of/i);
       const both = (await client.callTool({
-        name: "corpus_scan_task",
+        name: "corpus_reconcile",
         arguments: { task: "feat", spec: "SPEC-feat" },
       })) as { isError?: boolean; content: { text: string }[] };
       expect(both.isError).toBe(true);
       expect(both.content[0].text).toMatch(/exactly one of/i);
       // An invalid spec id (a separator) is rejected as a spec id — not stemmed, not run.
       const badSpec = (await client.callTool({
-        name: "corpus_reconcile_review",
+        name: "corpus_reconcile",
         arguments: { spec: "a/b" },
       })) as { isError?: boolean; content: { text: string }[] };
       expect(badSpec.isError).toBe(true);
@@ -320,7 +336,7 @@ describe("corpus-mcp server", () => {
     try {
       // A valid base ref containing `/` reaches the CLI as `--base origin/main` (not silently dropped).
       await client.callTool({
-        name: "corpus_scan_task",
+        name: "corpus_reconcile",
         arguments: { task: "feat", base: "origin/main" },
       });
       const reviewCall = invocations().find((a) => a[0] === "review");
@@ -330,7 +346,7 @@ describe("corpus-mcp server", () => {
 
       // A flag-shaped base is rejected (isError) — never reaches the subprocess as a flag.
       const r = (await client.callTool({
-        name: "corpus_scan_task",
+        name: "corpus_reconcile",
         arguments: { task: "feat", base: "--force" },
       })) as { isError?: boolean };
       expect(r.isError).toBe(true);
@@ -401,11 +417,18 @@ describe("corpus-mcp server", () => {
     const { client, close } = await connectClient();
     try {
       const unsafe = [
-        { name: "corpus_scan_task", arguments: { task: "../etc" } },
-        { name: "corpus_reconcile_review", arguments: { task: "../etc" } },
+        { name: "corpus_reconcile", arguments: { task: "../etc" } },
+        { name: "corpus_reconcile", arguments: { spec: "../etc" } },
         { name: "corpus_get_task", arguments: { task: "../etc" } },
         { name: "corpus_get_spec", arguments: { spec: "--help" } },
         { name: "corpus_get_review", arguments: { task: ".." } },
+        { name: "corpus_scaffold_spec", arguments: { slug: "../etc" } },
+        { name: "corpus_split_task", arguments: { spec: "../etc" } },
+        {
+          name: "corpus_split_task",
+          arguments: { spec: "SPEC-x", scope: ["AC-001", "../etc"] },
+        },
+        { name: "corpus_scaffold_finding", arguments: { from: "--help" } },
       ];
       for (const call of unsafe) {
         const r = (await client.callTool(call)) as { isError?: boolean };
@@ -445,12 +468,14 @@ describe("corpus-mcp server", () => {
     }
   });
 
-  it("validate_review_packet also refuses a path outside the root (isError, no subprocess)", async () => {
+  // AC-008: validate_review_packet is folded into check_file (it was a thin alias of `corpus check`). A
+  // review packet is now checked through the one check_file path.
+  it("check_file refuses a path outside the root (isError, no subprocess) — the one check path (AC-008)", async () => {
     const { client, close } = await connectClient();
     try {
       const r = (await client.callTool({
-        name: "corpus_validate_review_packet",
-        arguments: { review: "../../../etc/passwd" },
+        name: "corpus_check_file",
+        arguments: { path: "../../../etc/passwd" },
       })) as { isError?: boolean; content: { text: string }[] };
       expect(r.isError).toBe(true);
       expect(r.content[0].text).toMatch(/outside the workspace root/);
@@ -460,12 +485,12 @@ describe("corpus-mcp server", () => {
     }
   });
 
-  it("validate_review_packet surfaces the CLI check diagnostics through the envelope", async () => {
+  it("check_file surfaces the CLI check diagnostics through the envelope (a review packet checks here too)", async () => {
     const { client, close } = await connectClient();
     try {
       const r = (await client.callTool({
-        name: "corpus_validate_review_packet",
-        arguments: { review: "specs/a/spec.md" },
+        name: "corpus_check_file",
+        arguments: { path: "specs/a/spec.md", response_format: "detailed" },
       })) as {
         structuredContent: {
           ok: boolean;
@@ -476,6 +501,154 @@ describe("corpus-mcp server", () => {
       expect(r.structuredContent.data.diagnostics.map((d) => d.code)).toContain(
         "C004",
       );
+    } finally {
+      await close();
+    }
+  });
+
+  // --- AC-012 enumeration ---------------------------------------------------------------------------
+  it("corpus_list enumerates specs and tasks from the board (AC-012)", async () => {
+    const { client, close } = await connectClient();
+    try {
+      const specs = (await client.callTool({
+        name: "corpus_list",
+        arguments: { kind: "specs" },
+      })) as {
+        structuredContent: {
+          ok: boolean;
+          data: { kind: string; specs: { id: string }[] };
+        };
+      };
+      expect(specs.structuredContent.ok).toBe(true);
+      expect(specs.structuredContent.data.kind).toBe("specs");
+      expect(specs.structuredContent.data.specs.map((s) => s.id)).toContain(
+        "SPEC-x",
+      );
+
+      const tasks = (await client.callTool({
+        name: "corpus_list",
+        arguments: { kind: "tasks" },
+      })) as {
+        structuredContent: {
+          data: { kind: string; tasks: { id: string; spec: string }[] };
+        };
+      };
+      expect(tasks.structuredContent.data.kind).toBe("tasks");
+      const taskX = tasks.structuredContent.data.tasks.find(
+        (t) => t.id === "TASK-x",
+      );
+      expect(taskX?.spec).toBe("SPEC-x");
+    } finally {
+      await close();
+    }
+  });
+
+  // --- AC-013 concise/detailed response_format ------------------------------------------------------
+  it("a concise read returns materially fewer tokens than detailed, and advertises the format (AC-013)", async () => {
+    const { client, close } = await connectClient();
+    try {
+      const call = (format?: string) =>
+        client.callTool({
+          name: "corpus_get_spec",
+          arguments: {
+            spec: "SPEC-feat",
+            ...(format ? { response_format: format } : {}),
+          },
+        }) as Promise<{
+          structuredContent: { responseFormat?: string; data: unknown };
+        }>;
+      const detailed = await call("detailed");
+      const concise = await call("concise");
+      const dflt = await call(); // default is concise
+      expect(detailed.structuredContent.responseFormat).toBe("detailed");
+      expect(concise.structuredContent.responseFormat).toBe("concise");
+      expect(dflt.structuredContent.responseFormat).toBe("concise");
+      const len = (d: unknown) => JSON.stringify(d).length;
+      const detailedLen = len(detailed.structuredContent.data);
+      const conciseLen = len(concise.structuredContent.data);
+      // Concise is materially smaller — the slice drops the Execution prose, line numbers, frontmatter.
+      expect(conciseLen).toBeLessThan(detailedLen);
+      // default == concise byte-for-byte (concise is the default)
+      expect(len(dflt.structuredContent.data)).toBe(conciseLen);
+    } finally {
+      await close();
+    }
+  });
+
+  // --- AC-009 safe-write tier -----------------------------------------------------------------------
+  it("the safe-write tier scaffolds artifacts (spec/task/finding) verdict-free, never overwriting (AC-009)", async () => {
+    const { client, close } = await connectClient();
+    try {
+      const spec = (await client.callTool({
+        name: "corpus_scaffold_spec",
+        arguments: { slug: "new-thing" },
+      })) as {
+        isError?: boolean;
+        structuredContent: {
+          ok: boolean;
+          noVerdictIssued: boolean;
+          data: { specId: string };
+        };
+      };
+      expect(spec.isError).toBeFalsy();
+      expect(spec.structuredContent.noVerdictIssued).toBe(true);
+      expect(spec.structuredContent.data.specId).toBe("SPEC-new-thing");
+      // the scaffold actually landed on disk (the stub writes it, mirroring the CLI)
+      expect(existsSync(join(root, "specs", "new-thing", "spec.md"))).toBe(true);
+      // it used `new`, NOT a `--write`/`--force`/`--agent` mutation flag
+      const newCall = invocations().find((a) => a[0] === "new");
+      expect(newCall).toContain("spec");
+      for (const forbidden of ["--write", "--force", "--agent"]) {
+        expect(invocations().flat()).not.toContain(forbidden);
+      }
+
+      const task = (await client.callTool({
+        name: "corpus_split_task",
+        arguments: { spec: "SPEC-new-thing", scope: ["AC-001", "AC-002"] },
+      })) as {
+        isError?: boolean;
+        structuredContent: { data: { taskId: string; scope: string[] } };
+      };
+      expect(task.isError).toBeFalsy();
+      expect(task.structuredContent.data.scope).toEqual(["AC-001", "AC-002"]);
+      const taskCall = invocations().find((a) => a[0] === "new" && a[1] === "task");
+      expect(taskCall).toContain("--from");
+      expect(taskCall).toContain("SPEC-new-thing");
+      expect(taskCall).toContain("--scope");
+      expect(taskCall).toContain("AC-001,AC-002");
+
+      const finding = (await client.callTool({
+        name: "corpus_scaffold_finding",
+        arguments: { from: "TASK-new-thing" },
+      })) as {
+        isError?: boolean;
+        structuredContent: { data: { slug: string; from: string } };
+      };
+      expect(finding.isError).toBeFalsy();
+      expect(finding.structuredContent.data.from).toBe("TASK-new-thing");
+      expect(existsSync(join(root, "findings", "new-thing.md"))).toBe(true);
+
+      // The whole safe-write tier authored NO verdict key anywhere.
+      for (const sc of [spec, task, finding]) {
+        expect(Object.keys(sc.structuredContent)).not.toContain("verdict");
+      }
+    } finally {
+      await close();
+    }
+  });
+
+  it("split_task with no scope omits --scope (an unbounded task) and stays verdict-free (AC-009)", async () => {
+    const { client, close } = await connectClient();
+    try {
+      const r = (await client.callTool({
+        name: "corpus_split_task",
+        arguments: { spec: "SPEC-x" },
+      })) as { isError?: boolean; structuredContent: { noVerdictIssued: boolean } };
+      expect(r.isError).toBeFalsy();
+      expect(r.structuredContent.noVerdictIssued).toBe(true);
+      const taskCall = invocations().find((a) => a[0] === "new" && a[1] === "task");
+      expect(taskCall).toContain("--from");
+      expect(taskCall).not.toContain("--scope");
     } finally {
       await close();
     }

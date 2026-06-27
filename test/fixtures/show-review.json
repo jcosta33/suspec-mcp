@@ -1,1 +1,28 @@
-{"level":"clean","kind":"review","value":{"status":"revise → addressed (revised RFC)","sectionTitles":["Verdict","Findings + resolution","Confirmed sound (not changed)","Outcome"],"coverageRows":[],"verifyBlocks":[],"frontmatter":{"status":"revise → addressed (revised RFC)","spec":null,"task":null,"pr":null,"reviewedSha":null,"evidenceHash":null}}}
+{
+  "level": "clean",
+  "kind": "review",
+  "value": {
+    "status": "needs-human",
+    "sectionTitles": [
+      "Requirement coverage",
+      "Verify results",
+      "Human attention"
+    ],
+    "coverageRows": [
+      {
+        "id": "AC-001",
+        "result": "Pass",
+        "evidence": ""
+      }
+    ],
+    "verifyBlocks": [],
+    "frontmatter": {
+      "status": "needs-human",
+      "spec": "SPEC-demo-feature",
+      "task": "TASK-demo-feature",
+      "pr": "null",
+      "reviewedSha": null,
+      "evidenceHash": null
+    }
+  }
+}

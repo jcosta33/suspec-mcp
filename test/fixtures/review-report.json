@@ -1,1 +1,50 @@
-{"level":"warning","task":"feat","diffChangedFiles":["committed.ts","package-lock.json"],"coverage":[{"id":"AC-001","kind":"uncovered","message":"requirement AC-001 is in scope but has no coverage row (uncovered)"},{"id":"AC-002","kind":"uncovered","message":"requirement AC-002 is in scope but has no coverage row (uncovered)"}],"verifyBinding":[],"scopeDivergence":[],"selfReport":{"claimedNotInDiff":["src/a.ts"],"inDiffNotClaimed":["committed.ts","package-lock.json"],"outsideScope":["committed.ts","package-lock.json"]},"doNotChangeTouched":[],"emptyEvidencePassRows":[],"packetStructural":{"badResultCells":[],"badStatus":null,"statusPassContradicted":false,"missingSections":[]},"hasReviewPacket":false}
+{
+  "level": "warning",
+  "task": "TASK-demo-feature",
+  "diffChangedFiles": [
+    "src-file.txt"
+  ],
+  "coverage": [
+    {
+      "id": "AC-002",
+      "kind": "uncovered",
+      "message": "requirement AC-002 is in scope but has no coverage row (uncovered)"
+    }
+  ],
+  "verifyBinding": [
+    {
+      "id": "AC-001",
+      "kind": "free-form-only",
+      "message": "coverage row AC-001 is Pass with only a free-form Evidence cell (advisory — add a `verify` block to machine-confirm, or leave as-is to route to human attention)"
+    }
+  ],
+  "scopeDivergence": [],
+  "selfReport": {
+    "claimedNotInDiff": [],
+    "inDiffNotClaimed": [],
+    "outsideScope": [],
+    "runSummaryUnparsed": true
+  },
+  "doNotChangeTouched": [],
+  "emptyEvidencePassRows": [
+    "AC-001"
+  ],
+  "packetStructural": {
+    "badResultCells": [],
+    "badStatus": null,
+    "statusPassContradicted": false,
+    "missingSections": [
+      "Summary",
+      "Changed files",
+      "Suggested decision"
+    ]
+  },
+  "packetSize": {
+    "changedLoc": 0,
+    "filesTouched": 0
+  },
+  "specCoverageDrift": null,
+  "evidenceDigest": "d9dc0bbe6b0adfa4",
+  "reviewStale": null,
+  "hasReviewPacket": true
+}

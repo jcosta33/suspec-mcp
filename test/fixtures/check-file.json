@@ -1,1 +1,5 @@
-{ "level": "clean", "path": "specs/corpus-cli-run/spec.md", "diagnostics": [] }
+{
+  "level": "clean",
+  "path": "specs/demo-feature/spec.md",
+  "diagnostics": []
+}

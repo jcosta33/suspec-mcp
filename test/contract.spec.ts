@@ -13,6 +13,9 @@ import {
   ShowTaskSchema,
   ShowSpecSchema,
   ShowReviewSchema,
+  ScaffoldSpecSchema,
+  CutPacketSchema,
+  ScaffoldFindingSchema,
   CorpusErrorSchema,
 } from "../src/corpus/contract.ts";
 
@@ -55,7 +58,7 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     }
   });
 
-  it("WorkspaceFinding accepts the current advisory codes and trips on an unknown one (kept in sync with checkWorkspace.ts)", () => {
+  it("WorkspaceFinding.code is PASS-THROUGH: a benign new CLI advisory code does NOT trip the wire (AC-011/F7)", () => {
     const withFinding = (code: string) => ({
       level: "warning",
       verdict: "clean",
@@ -63,14 +66,26 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
       changePlans: [],
       workspaceFindings: [{ code, message: "x" }],
     });
-    // The newest advisory code (ADR-0110) must parse — the enum is synced to the CLI's WorkspaceFinding.
+    // An existing advisory code parses (unchanged behaviour for the consumer).
     expect(
       WorkspaceCheckSchema.safeParse(withFinding("incomplete-execution-digest"))
         .success,
     ).toBe(true);
-    // A code the CLI does not emit must trip the wire (the whole point of the closed set).
+    // AC-011: the adapter only PASSES `code` through (it surfaces the message, never branches on the
+    // code), so a new CLI advisory code is a benign additive change that must NOT convert into a
+    // corpus-mcp break — it parses, where the old closed enum would have tripped.
     expect(
       WorkspaceCheckSchema.safeParse(withFinding("totally-new-code")).success,
+    ).toBe(true);
+    // The tripwire that DOES still fire: the adapter reads `message`, so dropping it trips the wire.
+    expect(
+      WorkspaceCheckSchema.safeParse({
+        level: "warning",
+        verdict: "clean",
+        specs: [],
+        changePlans: [],
+        workspaceFindings: [{ code: "C002" /* message dropped */ }],
+      }).success,
     ).toBe(false);
   });
 
@@ -125,6 +140,22 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     expect(ShowReviewSchema.safeParse(drifted).success).toBe(false);
   });
 
+  it("the SAFE-WRITE tier reports parse (AC-009): new spec / new task --from / promote", () => {
+    expect(ScaffoldSpecSchema.safeParse(fixture("new-spec.json")).success).toBe(
+      true,
+    );
+    expect(CutPacketSchema.safeParse(fixture("new-task.json")).success).toBe(
+      true,
+    );
+    const promote = ScaffoldFindingSchema.safeParse(fixture("promote.json"));
+    expect(promote.success).toBe(true);
+    if (promote.success) {
+      // the report relays the artifact identity the adapter surfaces (path/slug/from) — never a verdict.
+      expect(promote.data.slug.length).toBeGreaterThan(0);
+      expect(promote.data.from.length).toBeGreaterThan(0);
+    }
+  });
+
   it("the structured error body parses", () => {
     expect(
       CorpusErrorSchema.safeParse({
@@ -162,12 +193,19 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     expect(ReviewReportSchema.safeParse(drifted).success).toBe(false);
   });
 
-  it("the tripwire FAILS on a closed-set enum drift (a new coverage kind)", () => {
-    const drifted = JSON.parse(
+  it("a new coverage `kind` is PASS-THROUGH and does NOT trip the wire (AC-011); the consumed `message` still does", () => {
+    const base = JSON.parse(
       readFileSync(join(here, "fixtures", "review-report.json"), "utf8"),
     );
-    drifted.coverage = [{ id: "AC-001", kind: "something-new", message: "x" }];
-    expect(ReviewReportSchema.safeParse(drifted).success).toBe(false);
+    // AC-011: the adapter derives human-attention from `.message`/`.id` and never branches on `kind`, so
+    // a new CLI coverage kind is a benign additive change that must NOT break corpus-mcp (it parses).
+    const newKind = { ...base };
+    newKind.coverage = [{ id: "AC-001", kind: "something-new", message: "x" }];
+    expect(ReviewReportSchema.safeParse(newKind).success).toBe(true);
+    // The tripwire that DOES still fire: dropping `message` (which the adapter reads) trips the wire.
+    const droppedMessage = { ...base };
+    droppedMessage.coverage = [{ id: "AC-001", kind: "uncovered" }];
+    expect(ReviewReportSchema.safeParse(droppedMessage).success).toBe(false);
   });
 
   it("the tripwire FAILS if a required top-level list is dropped (status.tasksWithoutReview)", () => {

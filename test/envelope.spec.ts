@@ -62,20 +62,29 @@ describe("build_envelope", () => {
     expect(env.data).toEqual({ level: "clean", verdict: "clean" });
   });
 
-  it("derives a human-attention list from the real ReviewReport facts", () => {
+  it("derives a STRUCTURED human-attention list {category,severity,message,ref} from the real ReviewReport facts (AC-010)", () => {
     const env = build_envelope(okResult(reviewData), "review");
     const attention = env.derived?.humanAttention ?? [];
     expect(env.derived?.derivedFrom).toBe("ReviewReport facts");
-    expect(attention.some((a) => a.includes("AC-002"))).toBe(true); // uncovered coverage finding
-    expect(attention.some((a) => a.includes("package-lock.json"))).toBe(true); // out-of-scope / not-claimed
-    expect(
-      attention.some((a) => a.includes("AC-004") && a.includes("Unverified")),
-    ).toBe(true); // empty-evidence Pass
+    // Each item is a structured object, not a flat string (AC-010): an agent can filter on category/ref
+    // without re-parsing `data`.
+    const coverage = attention.find((a) => a.ref === "AC-002");
+    expect(coverage).toBeDefined();
+    expect(coverage?.category).toBe("coverage");
+    expect(coverage?.message).toContain("AC-002");
+    expect(["blocking", "warning", "info"]).toContain(coverage?.severity);
+    // out-of-scope / not-claimed for package-lock.json surfaces by ref
+    expect(attention.some((a) => a.ref === "package-lock.json")).toBe(true);
+    // empty-evidence Pass row for AC-004 carries the Unverified message + its category
+    const empty = attention.find(
+      (a) => a.category === "empty-evidence" && a.ref === "AC-004",
+    );
+    expect(empty?.message).toContain("Unverified");
   });
 
   it("derives an item for EVERY fact branch (verifyBinding, scopeDivergence, self-report, packet structural)", () => {
     const full = {
-      level: "warning",
+      level: "blocking", // a blocking run → the blocking-class facts inherit `blocking` severity (AC-010)
       task: "feat",
       diffChangedFiles: ["a.ts"],
       coverage: [
@@ -106,6 +115,8 @@ describe("build_envelope", () => {
     };
     const att =
       build_envelope(okResult(full), "review").derived?.humanAttention ?? [];
+    // Every fact branch produces a structured item — assert against the `message` field (AC-010).
+    const messages = att.map((a) => a.message);
     for (const expected of [
       "orphan row AC-001",
       "verify cmd does not match",
@@ -121,10 +132,25 @@ describe("build_envelope", () => {
       "Human attention",
     ]) {
       expect(
-        att.some((a) => a.includes(expected)),
+        messages.some((m) => m.includes(expected)),
         `missing derived item for "${expected}"`,
       ).toBe(true);
     }
+    // Every item carries the structured quadruple — never a bare string (AC-010).
+    for (const item of att) {
+      expect(typeof item.category).toBe("string");
+      expect(["blocking", "warning", "info"]).toContain(item.severity);
+      expect(typeof item.message).toBe("string");
+      expect(item.ref === null || typeof item.ref === "string").toBe(true);
+    }
+    // The blocking-class facts inherit the engine's `blocking` level; the self-report drift notes stay
+    // `info` (advisory, never blocking on their own).
+    expect(
+      att.find((a) => a.category === "coverage")?.severity,
+    ).toBe("blocking");
+    expect(
+      att.find((a) => a.category === "self-report")?.severity,
+    ).toBe("info");
   });
 
   it("surfaces selfReport.runSummaryUnparsed as a human-attention item (#44 — CLI/TUI parity)", () => {
@@ -156,9 +182,12 @@ describe("build_envelope", () => {
     const att =
       build_envelope(okResult(unparsed), "review").derived?.humanAttention ??
       [];
-    expect(att.some((a) => a.includes("no machine-checkable file paths"))).toBe(
-      true,
+    const unparsedItem = att.find((a) =>
+      a.message.includes("no machine-checkable file paths"),
     );
+    expect(unparsedItem).toBeDefined();
+    expect(unparsedItem?.category).toBe("self-report");
+    expect(unparsedItem?.severity).toBe("info");
   });
 
   it("surfaces a structured CLI error (no worktree) as ok:false with a note, not a throw", () => {

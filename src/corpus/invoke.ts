@@ -1,9 +1,10 @@
 // The ONE subprocess edge. corpus-mcp never imports corpus-cli's internals — it shells out to the
 // `corpus` CLI's `--json` contract with a FIXED argv array (never a shell string, never a client-injected
 // flag). The verb is checked against a closed allow-list; positional args are pre-validated by the
-// caller (a file path confined to roots, or a task stem). `--json` is always appended; v0 never passes a
-// write flag. This keeps corpus-cli at its 2-dep footprint and couples the two repos only through the
-// public, tested JSON interface ("many libraries, not a framework").
+// caller (a file path confined to roots, or a task stem). `--json` is always appended; corpus-mcp never
+// passes a `--write`/`--force`/`--agent` mutation flag — only the verdict-free `--from`/`--scope` flags
+// the safe-write tier (AC-009) needs, each validated by the caller. This keeps corpus-cli at its minimal
+// footprint and couples the two repos only through the public, tested JSON interface.
 
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 
@@ -12,8 +13,22 @@ export type CorpusEnv = Readonly<{
   cwd: string; // the workspace root — every invocation runs here (root-confinement, defense in depth)
 }>;
 
-// The only verbs corpus-mcp may invoke. All are read-only / reconcile-only.
-const ALLOWED_VERBS = new Set(["status", "check", "review", "show"]);
+// The verbs corpus-mcp may invoke. The read/reconcile set (status/check/review/show) plus the verdict-free
+// SAFE-WRITE prepare ops (new/promote, AC-009 / ADR-0077 D8): each scaffolds an artifact (a spec, a task,
+// a candidate finding) and writes NO board, NO review result, and issues NO verdict.
+const ALLOWED_VERBS = new Set([
+  "status",
+  "check",
+  "review",
+  "show",
+  "new",
+  "promote",
+]);
+
+// The ONLY non-`--json` flags corpus-mcp may pass — the verdict-free flags the read + safe-write tiers
+// need. NOTABLY ABSENT: `--write` / `--force` / `--agent` (every mutation/verdict flag). A safe-write op
+// can only SCAFFOLD a fresh artifact; it can never overwrite (no `--force`) or write a review result.
+const ALLOWED_FLAGS = new Set(["--base", "--from", "--scope"]);
 
 export type CorpusInvocation = Readonly<{
   command: string; // the human-readable command line, for the envelope's provenance
@@ -52,7 +67,7 @@ export function invoke_corpus(
   env: CorpusEnv,
   verb: string,
   positional: readonly string[] = [],
-  opts: { base?: string } = {},
+  opts: { base?: string; flags?: Readonly<Record<string, string>> } = {},
 ): CorpusResult {
   if (!ALLOWED_VERBS.has(verb)) {
     // Defense in depth — the tools only ever pass allow-listed verbs; this catches a programming slip.
@@ -61,6 +76,17 @@ export function invoke_corpus(
     );
   }
   const args = [verb, ...positional];
+  // The verdict-free flags the read + safe-write tiers need (`--from`/`--scope` for `new task`), each
+  // value already validated by the caller. The flag NAME is allow-list-checked here as defense in depth —
+  // a programming slip that tried to pass `--write` would throw, never silently mutate.
+  for (const [flag, value] of Object.entries(opts.flags ?? {})) {
+    if (!ALLOWED_FLAGS.has(flag)) {
+      throw new Error(
+        `corpus-mcp: refusing to pass a non-allow-listed flag: "${flag}"`,
+      );
+    }
+    args.push(flag, value);
+  }
   if (typeof opts.base === "string" && opts.base.length > 0) {
     args.push("--base", opts.base);
   }
