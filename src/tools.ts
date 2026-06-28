@@ -188,7 +188,7 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
     {
       title: "Reconcile a run vs its spec/task and the diff (no verdict)",
       description:
-        "Reconcile a task (or a spec, via `spec:` — the task-less 1:1 review-to-spec case) " +
+        "Reconcile a task (or a spec, the task-less 1:1 review-to-spec case) " +
         "against its spec and the worktree diff: coverage gaps, out-of-scope changes, empty-evidence Pass " +
         "rows, and self-report mismatches as facts + a structured human-attention list. This is the SAME " +
         "engine whether or not a review packet exists yet (the report carries hasReviewPacket — no separate " +
@@ -246,7 +246,7 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
     {
       title: "Get a parsed task packet",
       description:
-        "The task packet`s scope, affected areas, claimed changes, frontmatter (id/source/status), and the " +
+        "The task packet's scope, affected areas, claimed changes, frontmatter (id/source/status), and the " +
         "cross-root embedded spec slice (embeddedSpecId/embeddedRequirements) when present. " +
         "concise returns the scope-bearing identity slice; detailed the full packet. Read-only.",
       inputSchema: {
@@ -276,7 +276,7 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
     {
       title: "Get a parsed spec",
       description:
-        "The spec`s frontmatter (incl. the living-spec snapshot/supersededBy fields), requirements (id + line + " +
+        "The spec's frontmatter (incl. the living-spec snapshot/supersededBy fields), requirements (id + line + " +
         "named verify command), sections, and the append-only `## Execution` run-record (the durable history of " +
         "each change once tasks/reviews are ephemeral). concise drops the Execution prose + line " +
         "numbers; detailed returns it whole. Read-only.",
@@ -304,10 +304,10 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
     {
       title: "Get a parsed review packet",
       description:
-        "The review packet`s status, coverage rows, verify blocks, and identity/staleness frontmatter (which " +
-        "spec/task it reviews — `spec:` for the task-less 1:1 case — plus the fast-track reviewedSha/evidenceHash " +
+        "The review packet's status, coverage rows, verify blocks, and identity/staleness frontmatter (which " +
+        "spec/task it reviews — a spec for the task-less 1:1 case — plus the fast-track reviewedSha/evidenceHash " +
         "pins). concise drops the evidence prose + staleness pins; detailed returns them. " +
-        "Read-only; the verdict is the human`s.",
+        "Read-only; the verdict is the human's.",
       inputSchema: {
         task: z
           .string()
