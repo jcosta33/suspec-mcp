@@ -281,8 +281,19 @@ export function tool_result(envelope: Envelope): {
       summaryLines.push(`  - [${item.severity}/${item.category}] ${item.message}`);
     }
   }
+  const content: { type: "text"; text: string }[] = [
+    { type: "text", text: summaryLines.join("\n") },
+  ];
+  // Text-only clients (opencode today) render `content[].text` and DROP `structuredContent`, so the
+  // payload below is invisible there unless we mirror it into a text block — the tool otherwise goes
+  // silently blind on such a client (suspec-works #88). structuredContent-aware clients get the payload
+  // twice; universal visibility is the deliberate trade (a tool whose data no mainstream client can see
+  // is broken DX regardless of who is spec-correct). Guarded so an empty/absent payload emits nothing.
+  if (envelope.data !== undefined && envelope.data !== null) {
+    content.push({ type: "text", text: JSON.stringify(envelope.data, null, 2) });
+  }
   return {
-    content: [{ type: "text", text: summaryLines.join("\n") }],
+    content,
     structuredContent: envelope as unknown as Record<string, unknown>,
   };
 }

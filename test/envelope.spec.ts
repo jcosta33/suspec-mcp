@@ -256,6 +256,22 @@ describe("respond", () => {
       expect(result.structuredContent.noVerdictIssued).toBe(true);
     }
   });
+
+  it("mirrors the payload into a text content block for text-only clients (suspec-works #88)", () => {
+    // opencode renders only content[].text and drops structuredContent — the payload must survive there.
+    const result = respond(okResult({ level: "clean" }));
+    expect("content" in result).toBe(true);
+    if ("content" in result) {
+      // content[0] is the runnability summary; content[1] is the JSON payload mirror.
+      expect(result.content.length).toBe(2);
+      const mirrored = result.content[1]?.text ?? "";
+      expect(mirrored).toContain('"level": "clean"');
+      // The same data lives in structuredContent — text-only and structured clients agree.
+      if ("structuredContent" in result) {
+        expect(JSON.parse(mirrored)).toEqual(result.structuredContent.data);
+      }
+    }
+  });
 });
 
 describe("tool_error", () => {
