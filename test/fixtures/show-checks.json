@@ -2,7 +2,7 @@
   "level": "clean",
   "kind": "checks",
   "value": {
-    "version": "0.9.0",
+    "version": "0.11.0",
     "checks": [
       {
         "id": "C001",
@@ -87,6 +87,11 @@
       {
         "id": "C017",
         "name": "orphaned-reference",
+        "severity": "warning"
+      },
+      {
+        "id": "C019",
+        "name": "malformed-requirement-heading",
         "severity": "warning"
       }
     ]

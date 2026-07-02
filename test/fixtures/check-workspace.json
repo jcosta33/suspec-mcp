@@ -3,12 +3,12 @@
   "verdict": "clean",
   "specs": [
     {
-      "path": "/private/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-qbIJCX/specs/demo-feature/spec.md",
+      "path": "/private/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-7Z0XcL/specs/demo-feature/spec.md",
       "level": "clean",
       "diagnostics": []
     },
     {
-      "path": "/private/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-qbIJCX/specs/prep-demo/spec.md",
+      "path": "/private/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-7Z0XcL/specs/prep-demo/spec.md",
       "level": "clean",
       "diagnostics": []
     }
