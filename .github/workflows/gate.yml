@@ -1,0 +1,46 @@
+# The full verification gate: typecheck · lint · coverage · build — plus the AC-011 fixture drift
+# tripwire, which bites here because suspec-cli is checked out as a sibling (the generated-fixtures
+# suite skips loudly without one).
+name: gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: repo
+          persist-credentials: false
+
+      # The real CLI: the fixture tripwire resolves any sibling whose package name is suspec-cli.
+      - uses: actions/checkout@v4
+        with:
+          repository: jcosta33/suspec-cli
+          path: suspec-cli
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install the sibling CLI's deps (the tripwire runs it)
+        working-directory: suspec-cli
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Gate
+        working-directory: repo
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm gate
