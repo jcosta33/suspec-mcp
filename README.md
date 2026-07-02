@@ -49,8 +49,13 @@ run a model loop, write a board, write a review result, or issue a verdict.
 
 ## Run it
 
+The server is one command — `suspec-mcp --workspace <path>` — wired into each client's MCP config. The
+JSON shape below is shared by **Claude Desktop, Claude Code, and Cursor** (Claude Code stores it in
+`~/.claude.json` under `mcpServers`, or `.mcp.json` in a project); **Codex** uses TOML; **opencode** uses
+its own JSON block.
+
 ```jsonc
-// Claude Desktop / Cursor MCP config
+// Claude Desktop / Claude Code / Cursor
 {
   "mcpServers": {
     "suspec": {
@@ -61,9 +66,29 @@ run a model loop, write a board, write a review result, or issue a verdict.
 }
 ```
 
+```toml
+# Codex — ~/.codex/config.toml
+[mcp_servers.suspec]
+command = "suspec-mcp"
+args = ["--workspace", "/path/to/your/suspec-workspace"]
+```
+
+```jsonc
+// opencode — opencode.jsonc
+{
+  "mcp": {
+    "suspec": {
+      "type": "local",
+      "command": ["suspec-mcp", "--workspace", "/path/to/your/suspec-workspace"],
+    },
+  },
+}
+```
+
 Config: `--workspace <path>` / `SUSPEC_WORKSPACE` (the workspace root); `--suspec-bin <path>` / `SUSPEC_BIN`
 (the `suspec` binary, default `suspec` on PATH). Requires the [`suspec` CLI](https://github.com/jcosta33/suspec-cli)
-installed.
+installed. The server binary is named `suspec-mcp` — an older `corpus-mcp` name predates the rename and
+resolves to nothing; a config still pointing at it silently starts no server.
 
 The `suspec-mcp` command above resolves to this package's bin. To install from source until a published
 build is available:
