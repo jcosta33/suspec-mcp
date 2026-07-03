@@ -73,8 +73,10 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
     {
       title: "Suspec workspace board",
       description:
-        "The derived workspace board — specs, their tasks, and review status. Read-only; no verdict. " +
-        "concise returns spec/task ids + review status + the triage lists; detailed the full board.",
+        `The derived workspace board — specs, their tasks, and review status, for the ONE workspace ` +
+        `this server instance is bound to (${ctx.root}); switching workspaces means restarting the ` +
+        `server with a different --workspace. Read-only; no verdict. ` +
+        `concise returns spec/task ids + review status + the triage lists; detailed the full board.`,
       inputSchema: { ...responseFormatInput },
       outputSchema: ENVELOPE_OUTPUT_SHAPE,
       annotations: READ_ONLY,

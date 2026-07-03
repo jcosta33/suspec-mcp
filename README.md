@@ -87,7 +87,10 @@ args = ["--workspace", "/path/to/your/suspec-workspace"]
 
 Config: `--workspace <path>` / `SUSPEC_WORKSPACE` (the workspace root); `--suspec-bin <path>` / `SUSPEC_BIN`
 (the `suspec` binary, default `suspec` on PATH). Requires the [`suspec` CLI](https://github.com/jcosta33/suspec-cli)
-installed. The server binary is named `suspec-mcp` — an older `corpus-mcp` name predates the rename and
+installed. **One workspace per instance:** a server binds to exactly one `--workspace` at launch and
+cannot switch or serve several roots; working across workspaces means one configured server entry per
+workspace (or a restart with a different path). The board tool names the root it serves so an agent can
+tell which workspace it is talking to. The server binary is named `suspec-mcp` — an older `corpus-mcp` name predates the rename and
 resolves to nothing; a config still pointing at it silently starts no server.
 
 The `suspec-mcp` command above resolves to this package's bin. To install from source until a published

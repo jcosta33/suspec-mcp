@@ -1,8 +1,9 @@
 {
   "level": "clean",
-  "path": "/private/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-7Z0XcL/tasks/TASK-prep-demo.md",
+  "path": "/private/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-LiE7kN/tasks/TASK-prep-demo.md",
   "taskId": "TASK-prep-demo",
   "scope": [
     "AC-001"
-  ]
+  ],
+  "autoSuffixed": false
 }
