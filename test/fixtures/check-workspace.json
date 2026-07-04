@@ -3,12 +3,12 @@
   "verdict": "clean",
   "specs": [
     {
-      "path": "/private/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-LiE7kN/specs/demo-feature/spec.md",
+      "path": "/private/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-aWGsGm/specs/demo-feature/spec.md",
       "level": "clean",
       "diagnostics": []
     },
     {
-      "path": "/private/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-LiE7kN/specs/prep-demo/spec.md",
+      "path": "/private/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-aWGsGm/specs/prep-demo/spec.md",
       "level": "clean",
       "diagnostics": []
     }
@@ -18,7 +18,7 @@
     {
       "code": "placeholder",
       "level": "warning",
-      "message": "AGENTS.md still has the kit's {{placeholder}}s (lines 32, 36, 37, 38, 47, 48, 49, 50) — fill them in before relying on the workspace"
+      "message": "AGENTS.md still has the kit's {{placeholder}}s (lines 33, 37, 38, 39, 48, 49, 50, 51) — fill them in before relying on the workspace"
     }
   ]
 }

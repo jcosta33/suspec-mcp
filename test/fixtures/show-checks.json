@@ -2,7 +2,7 @@
   "level": "clean",
   "kind": "checks",
   "value": {
-    "version": "0.12.0",
+    "version": "0.15.0",
     "checks": [
       {
         "id": "C001",
@@ -93,6 +93,11 @@
         "id": "C019",
         "name": "malformed-requirement-heading",
         "severity": "warning"
+      },
+      {
+        "id": "C020",
+        "name": "unresolvable-ref",
+        "severity": "hard-error"
       }
     ]
   }
