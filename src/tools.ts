@@ -84,7 +84,8 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
       title: "Suspec store summary",
       description:
         `The store summary for the ONE repo this server instance is bound to (${ctx.root}): the active ` +
-        `and archived store artifacts (specs, runs, reviews, findings, intakes) with their ages, plus ` +
+        `and archived store artifacts (specs, runs, reviews, tasks, findings, intakes, change-plans) ` +
+        `with their ages, plus ` +
         `the \`next\` attention ranking (live runs, gate gaps, triage debt, ready specs). Read-only; no ` +
         `verdict; switching repos means restarting the server with a different --workspace. concise ` +
         `drops the archived listing; detailed returns everything.`,
@@ -110,8 +111,9 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
       title: "List the store's artifacts",
       description:
         "Enumerate the repo's store artifacts (so an agent without a slug can find one) via `suspec " +
-        "store list`: active + archived, each with filename, kind (spec/run/review/finding/intake), and " +
-        "age in days. A run slug is the `run-<slug>.md` filename stem. Read-only; no verdict.",
+        "store list`: active + archived, each with filename, kind " +
+        "(spec/run/review/task/finding/intake/change-plan), and age in days. A run slug is the " +
+        "`run-<slug>.md` filename stem. Read-only; no verdict.",
       inputSchema: { ...responseFormatInput },
       outputSchema: ENVELOPE_OUTPUT_SHAPE,
       annotations: READ_ONLY,

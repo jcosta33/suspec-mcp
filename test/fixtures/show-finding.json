@@ -2,7 +2,7 @@
   "level": "clean",
   "kind": "finding",
   "value": {
-    "path": "/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-4YcP2r/state/repo/finding-demo.md",
+    "path": "/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-y7yEr0/state/repo/finding-demo.md",
     "archived": false,
     "id": "FINDING-demo",
     "title": "A demo finding",

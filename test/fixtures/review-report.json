@@ -4,15 +4,15 @@
   "specId": "SPEC-demo-feature",
   "lint": [
     {
-      "path": "/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-4YcP2r/state/repo/run-demo.md",
+      "path": "/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-y7yEr0/state/repo/run-demo.md",
       "diagnostics": []
     },
     {
-      "path": "/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-4YcP2r/state/repo/spec-demo-feature.md",
+      "path": "/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-y7yEr0/state/repo/spec-demo-feature.md",
       "diagnostics": []
     },
     {
-      "path": "/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-4YcP2r/state/repo/review-demo.md",
+      "path": "/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-y7yEr0/state/repo/review-demo.md",
       "diagnostics": [
         {
           "check": "C012",
