@@ -134,7 +134,8 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
       description:
         "Run the checks contract over the repo's STORE artifacts via `suspec check` (no file): every " +
         "run record, its driving spec, review packets, and evidence records (a forged cli-verified " +
-        "claim is a hard error). Returns diagnostics, never a verdict. concise returns only the " +
+        "claim is a hard error). Returns diagnostics plus a derived human-attention list (each " +
+        "diagnostic as a structured artifact-lint item), never a verdict. concise returns only the " +
         "artifacts that carry a diagnostic; detailed every result.",
       inputSchema: { ...responseFormatInput },
       outputSchema: ENVELOPE_OUTPUT_SHAPE,
@@ -142,7 +143,7 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
     },
     ({ response_format }) => {
       const format = resolve_format(response_format);
-      return respond(invoke_suspec(ctx.env, "check"), "plain", {
+      return respond(invoke_suspec(ctx.env, "check"), "store-lint", {
         format,
         slice: slice_store_lint,
       });

@@ -12,7 +12,12 @@
 import { z } from "zod";
 
 import type { SuspecResult } from "./suspec/invoke.ts";
-import { RunReviewSchema, type RunReview } from "./suspec/contract.ts";
+import {
+  RunReviewSchema,
+  StoreLintSchema,
+  type RunReview,
+  type StoreLint,
+} from "./suspec/contract.ts";
 
 const NO_VERDICT_NOTE =
   "suspec-mcp surfaces facts only and issues no verdict. The human owns the result: `suspec done` is " +
@@ -54,17 +59,43 @@ const ATTENTION_ITEM_SHAPE = z.object({
 });
 
 export const ENVELOPE_OUTPUT_SHAPE = {
-  ok: z.boolean(),
+  // RUNNABILITY, never a result: true = the CLI ran and returned a parseable success payload; false =
+  // it returned a structured error. Deliberately NOT tied to the CLI's exit code or diagnostic level —
+  // an exit-1/2 lint that found problems still ran fine (ok:true) and carries its findings in `data`
+  // (`data.level`, diagnostics) + `source.exitCode`. Reading ok:true as "no problems" is a misread.
+  ok: z
+    .boolean()
+    .describe(
+      "runnability, not a result: the CLI ran and returned a parseable payload. NOT pass/fail — a " +
+        "lint that found hard errors is still ok:true; read data.level / data diagnostics / " +
+        "source.exitCode for the CLI's own recorded facts",
+    ),
   noVerdictIssued: z.literal(true),
   noVerdictNote: z.string(),
-  source: z.object({ command: z.string(), exitCode: z.number() }),
-  data: z.unknown(),
+  source: z
+    .object({
+      command: z.string(),
+      exitCode: z
+        .number()
+        .describe(
+          "the CLI's exit code, relayed verbatim (its unixOutcome contract: 0 clean, 1 warnings, " +
+            "2 hard errors / structured error)",
+        ),
+    })
+    .describe("provenance: the exact CLI command run and its exit code"),
+  data: z
+    .unknown()
+    .describe("the CLI --json payload (verbatim in detailed, a slice in concise), or its structured error"),
   derived: z
     .object({
       humanAttention: z.array(ATTENTION_ITEM_SHAPE),
       derivedFrom: z.string(),
     })
-    .optional(),
+    .optional()
+    .describe(
+      "computed BY suspec-mcp from the CLI facts (labelled so it is never mistaken for an engine " +
+        "field): structured triage items, not a verdict",
+    ),
   note: z.string().optional(),
   responseFormat: z.enum(["concise", "detailed"]).optional(),
 };
@@ -76,9 +107,14 @@ export const ENVELOPE_OUTPUT_SHAPE = {
 //   • each gate gap (an AC short of fresh cli-verified evidence) → `evidence-gap`, warning; ref = the
 //     AC id, message built from the matching evidence row's recorded status. This is triage urgency,
 //     NOT a Pass/Fail — `suspec done` (the human's gate) owns the result.
-function derive_human_attention(report: RunReview): AttentionItem[] {
+// The artifact-lint half, shared by BOTH derivations (a run review's `lint` list and the store lint's
+// `artifacts` list carry the same StoreLintArtifact shape): each diagnostic → one `artifact-lint` item,
+// severity scaled by the diagnostic's own class (hard-error → blocking, warning → warning).
+function derive_lint_attention(
+  artifacts: RunReview["lint"] | StoreLint["artifacts"],
+): AttentionItem[] {
   const items: AttentionItem[] = [];
-  for (const artifact of report.lint) {
+  for (const artifact of artifacts) {
     for (const diag of artifact.diagnostics) {
       items.push({
         category: "artifact-lint",
@@ -88,6 +124,11 @@ function derive_human_attention(report: RunReview): AttentionItem[] {
       });
     }
   }
+  return items;
+}
+
+function derive_human_attention(report: RunReview): AttentionItem[] {
+  const items: AttentionItem[] = derive_lint_attention(report.lint);
   for (const ac of report.gaps) {
     const row = report.evidence.find((r) => r.ac === ac);
     const status = row?.status ?? "missing";
@@ -102,7 +143,10 @@ function derive_human_attention(report: RunReview): AttentionItem[] {
 }
 
 // Build an envelope from a successful or structured-error CLI result. `kind: 'review'` additionally
-// derives the human-attention list (and surfaces the no-such-run case structurally). A
+// derives the human-attention list (and surfaces the no-such-run case structurally); `kind:
+// 'store-lint'` derives the artifact-lint half from the store lint's diagnostics — the SAME AC-010
+// category, so a blocking store-lint diagnostic surfaces as structured triage instead of staying
+// buried in `data` (the review face and the lint face were asymmetric before, revolver r4). A
 // launch-error never reaches here — `respond()` turns it into a tool error.
 //
 // `format` selects the slice `data` carries (AC-013). `slice` (when given for a read tool) maps the
@@ -111,7 +155,7 @@ function derive_human_attention(report: RunReview): AttentionItem[] {
 // is small already and surfaced whole.
 export function build_envelope(
   result: Exclude<SuspecResult, { kind: "launch-error" }>,
-  kind: "plain" | "review" = "plain",
+  kind: "plain" | "review" | "store-lint" = "plain",
   opts: {
     format?: "concise" | "detailed";
     slice?: (data: unknown) => unknown;
@@ -172,6 +216,28 @@ export function build_envelope(
     };
   }
 
+  if (kind === "store-lint") {
+    const parsed = StoreLintSchema.safeParse(result.data);
+    if (parsed.success) {
+      return {
+        ...base,
+        ok: true,
+        data: projected,
+        derived: {
+          humanAttention: derive_lint_attention(parsed.data.artifacts),
+          derivedFrom: "store artifact-lint diagnostics (`suspec check`)",
+        },
+      };
+    }
+    // shape drift — same posture as the review path: surface, never silently derive from a bad parse
+    return {
+      ...base,
+      ok: true,
+      data: result.data,
+      note: "store lint output did not match the expected shape — human-attention not derived",
+    };
+  }
+
   return { ...base, ok: true, data: projected };
 }
 
@@ -218,7 +284,7 @@ export function tool_result(envelope: Envelope): {
 // selects the review-derivation path; `opts` carries the concise/detailed format + the per-tool slice.
 export function respond(
   result: SuspecResult,
-  kind: "plain" | "review" = "plain",
+  kind: "plain" | "review" | "store-lint" = "plain",
   opts: {
     format?: "concise" | "detailed";
     slice?: (data: unknown) => unknown;

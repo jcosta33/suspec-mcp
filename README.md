@@ -124,7 +124,8 @@ published/files-pruned install with no `src/` always runs `dist/`, which needs N
   - `suspec_get_artifact` — load ONE store artifact by id/slug via the CLI's store-resolving
     `suspec show <kind> <ref>` (kind: spec/run/review/task/finding/intake). For a shell-less client
     this is the only way to read a store artifact at all.
-  - `suspec_check_store` — the checks contract as artifact lint over the repo's STORE (`suspec check`).
+  - `suspec_check_store` — the checks contract as artifact lint over the repo's STORE (`suspec check`),
+    each diagnostic also derived as a structured artifact-lint attention item.
   - `suspec_check_file` — the one check path for one repo-resident file (a promoted spec, a review
     packet). Store artifacts are out of its reach; the run/spec chain is linted by `suspec_check_store`.
   - `suspec_get_checks` — the checks contract (version + the core checks).

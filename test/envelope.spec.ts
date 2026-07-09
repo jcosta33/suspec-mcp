@@ -128,6 +128,42 @@ describe("build_envelope", () => {
     }
   });
 
+  it("a store-lint result derives the SAME structured artifact-lint items as a review's lint half", () => {
+    const lintData = {
+      level: "blocking",
+      runCount: 1,
+      specCount: 1,
+      artifacts: [
+        { path: "/store/run-demo.md", diagnostics: [] },
+        {
+          path: "/store/spec-demo.md",
+          diagnostics: [
+            { check: "C007", severity: "hard-error", message: "spec has {{TBD}} placeholders" },
+            { check: "C004", severity: "warning", message: "two strength words" },
+          ],
+        },
+      ],
+    };
+    const env = build_envelope(okResult(lintData), "store-lint");
+    const att = env.derived?.humanAttention ?? [];
+    expect(env.derived?.derivedFrom).toContain("suspec check");
+    expect(att).toHaveLength(2);
+    expect(att[0]).toEqual({
+      category: "artifact-lint",
+      severity: "blocking",
+      message: "C007: spec has {{TBD}} placeholders",
+      ref: "/store/spec-demo.md",
+    });
+    expect(att[1]?.severity).toBe("warning");
+  });
+
+  it("surfaces store-lint shape drift with a note instead of deriving from a bad parse", () => {
+    const env = build_envelope(okResult({ level: "clean" /* artifacts dropped */ }), "store-lint");
+    expect(env.ok).toBe(true);
+    expect(env.derived).toBeUndefined();
+    expect(env.note).toMatch(/store lint output did not match/);
+  });
+
   it("surfaces a structured CLI no-such-run error as ok:false with the runs-appear-after-work hint", () => {
     const env = build_envelope(
       {
