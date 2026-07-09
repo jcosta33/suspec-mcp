@@ -27,7 +27,7 @@ export function register_prompts(server: McpServer): void {
       user_text(
         `Before you claim run ${run} is ready:\n\n` +
           `1. Call suspec_reconcile (run: ${run}) — it previews exactly what \`suspec done\` will gate on: ` +
-          `the artifact lint plus every spec AC's evidence row (verified / stale / failing / missing).\n` +
+          `the artifact lint plus every spec AC's evidence row (verified / stale / failing / command-mismatch / missing).\n` +
           `2. Fix every lint diagnostic you can (the run record, the spec, the evidence records).\n` +
           `3. For every evidence gap, capture real proof: \`suspec evidence add ${run} --ac <AC> -- <command>\` ` +
           `runs the command in the run worktree and records it cli-verified. Never hand-write an evidence record.\n` +
@@ -75,7 +75,8 @@ export function register_prompts(server: McpServer): void {
           `An AC counts as evidenced only by a fresh, exit-0, cli-verified evidence record — one captured ` +
           `by \`suspec evidence add <RUN> --ac <AC> -- <command>\`, which runs the command itself and ` +
           `records the output. A hand-written record is forged (the lint flags it); a stale record ` +
-          `(the worktree changed since capture) does not count; an agent's own assertion never counts.\n\n` +
+          `(the worktree changed since capture) does not count; a capture of a command other than the ` +
+          `AC's named Verify command reads command-mismatch — a gap; an agent's own assertion never counts.\n\n` +
           `suspec-mcp surfaces facts; it issues no verdict. \`suspec done\` — the human's gate — decides.`,
       ),
   );

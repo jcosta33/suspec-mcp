@@ -32,7 +32,11 @@ const ALLOWED_VERBS = new Set([
 // `purge` DELETE artifacts) — the verb alone is no longer a read guarantee, so the subcommand is
 // allow-listed too. Only the read faces pass; `migrate`/`gc`/`purge` are store MAINTENANCE the human
 // runs via the CLI (they mutate/delete artifacts — nothing reconcile-only about them), and `doctor`
-// is not consumed by any tool yet, so it is not opened pre-emptively.
+// is not consumed by any tool yet, so it is not opened pre-emptively. `store path` prints the store
+// dir but resolves NON-probe — on a fresh repo it CREATES the store dir + `.repo-path` marker. That
+// write is the same benign store-materialization `write spec` already performs, so it could join the
+// safe-write tier — but no MCP tool consumes it (every store-reading tool gets the store path from
+// the CLI's own output), so like `doctor` it stays closed until a tool actually needs it.
 const ALLOWED_STORE_SUBCOMMANDS = new Set(["list"]);
 
 // The ONLY non-`--json` flags suspec-mcp may pass — the verdict-free flags the safe-write tier

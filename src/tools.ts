@@ -253,7 +253,8 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
         "Reconcile a STORE run against its driving spec via `suspec review <RUN>`: (1) artifact lint — " +
         "the run record, its spec, the review packet if one exists, every evidence record; (2) the " +
         "evidence-vs-AC rows — every spec AC against the run's evidence records (verified / stale / " +
-        "failing / missing), the SAME rows `suspec done` gates on, previewed without closing anything. " +
+        "failing / command-mismatch / missing), the SAME rows `suspec done` gates on, previewed without " +
+        "closing anything. " +
         "Returns facts + a derived human-attention list; never a verdict — the human owns the result " +
         "(`suspec done` is the gate). If the run does not exist in the store, returns a structured " +
         '"no such run" result, not an error.',

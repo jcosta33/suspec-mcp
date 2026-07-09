@@ -104,9 +104,10 @@ export const ENVELOPE_OUTPUT_SHAPE = {
 // review.ts). Every item is a fact the engine surfaced — never a verdict:
 //   • each store-lint diagnostic → `artifact-lint`, severity scaled by the diagnostic's own class
 //     (hard-error → blocking, warning → warning); ref = the store artifact's path.
-//   • each gate gap (an AC short of fresh cli-verified evidence) → `evidence-gap`, warning; ref = the
-//     AC id, message built from the matching evidence row's recorded status. This is triage urgency,
-//     NOT a Pass/Fail — `suspec done` (the human's gate) owns the result.
+//   • each gate gap (an AC short of gate-passing evidence — missing/stale/failing, the wrong Verify
+//     command, or an unledgered capture) → `evidence-gap`, warning; ref = the AC id, message built from
+//     the matching evidence row's recorded status. This is triage urgency, NOT a Pass/Fail — `suspec
+//     done` (the human's gate) owns the result.
 // The artifact-lint half, shared by BOTH derivations (a run review's `lint` list and the store lint's
 // `artifacts` list carry the same StoreLintArtifact shape): each diagnostic → one `artifact-lint` item,
 // severity scaled by the diagnostic's own class (hard-error → blocking, warning → warning).
@@ -135,7 +136,7 @@ function derive_human_attention(report: RunReview): AttentionItem[] {
     items.push({
       category: "evidence-gap",
       severity: "warning",
-      message: `${ac}: no fresh cli-verified evidence (${status}) — capture with \`suspec evidence add ${report.runSlug} --ac ${ac} -- <command>\``,
+      message: `${ac}: no gate-passing evidence (${status}) — capture the AC's Verify command with \`suspec evidence add ${report.runSlug} --ac ${ac} -- <command>\``,
       ref: ac,
     });
   }

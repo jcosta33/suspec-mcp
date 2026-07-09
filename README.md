@@ -44,7 +44,8 @@ run a model loop, launch a runner, close a gate, promote a finding, or issue a v
   flag-free one-liner; the verb _and_ flag are allow-list-checked at the one subprocess edge. The
   mutation verbs (`work`, `done`, `evidence`, `fix`, `promote`) are not on the allow-list at all, and
   `store` is pinned to its read face (`list`) — `store migrate`/`gc`/`purge` mutate or delete artifacts
-  and stay CLI-only maintenance.
+  and stay CLI-only maintenance, and `store path` (which materializes the store dir on a fresh repo)
+  stays closed until an MCP tool actually consumes it.
 - **A typed contract that bends only where it should.** The CLI `--json` shapes are mirrored as a drift
   tripwire (a renamed/dropped field the adapter _reads_ fails a test, not silently-wrong output), but a
   pass-through-only enum (a CLI status class the adapter merely relays) is `z.string()` — a benign additive
@@ -134,7 +135,8 @@ unsupported and warns at install time.
   - `suspec_get_checks` — the checks contract (version + the core checks).
 - **Reconcile tool (1).** `suspec_reconcile` — reconcile a store `run` against its driving spec
   (`suspec review <RUN>`): artifact lint + the evidence-vs-AC rows (verified / stale / failing /
-  missing), the SAME rows `suspec done` gates on, previewed without closing anything. The
+  command-mismatch / missing), the SAME rows `suspec done` gates on, previewed without closing
+  anything. The
   implementer-vs-reviewer _stance_ split lives in the prompts, not in two tools.
 - **Safe-write tools (2) — verdict-free prepare ops.** `suspec_scaffold_spec` (`write spec "<intent>"` —
   a draft store spec; never `--launch`), `suspec_split_task` (`new task --from`, scope copied not

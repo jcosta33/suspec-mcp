@@ -60,7 +60,8 @@ export type StoreList = z.infer<typeof StoreListSchema>;
 
 // --- suspec check --json (no args) → the store lint (lintStoreArtifacts.ts) ------------------------
 // A store-lint diagnostic (lintRunArtifacts.ts `StoreLintDiagnostic`): `check` is a contract C-code or
-// a store-local code (RUN01, EV01..EV03) — pass-through. `severity` is CLOSED: the adapter branches on
+// a store-local code (RUN01, EV01..EV04 — EV04 = a capture block with no backing line in the CLI-owned
+// capture ledger, hard-error) — pass-through. `severity` is CLOSED: the adapter branches on
 // `=== "hard-error"` to scale the derived human-attention severity (envelope.ts).
 const StoreLintDiagnostic = z
   .object({
