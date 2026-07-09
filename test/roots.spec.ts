@@ -13,8 +13,7 @@ import { join } from "node:path";
 import {
   confine_path,
   is_safe_segment,
-  is_safe_base,
-  task_stem,
+  is_safe_intent,
 } from "../src/roots.ts";
 
 let root: string;
@@ -100,46 +99,24 @@ describe("confine_path", () => {
   });
 });
 
-describe("is_safe_base", () => {
-  it("accepts real git refs (slash, tilde, caret, dot, at, reflog, SHA)", () => {
-    for (const ref of [
-      "main",
-      "origin/main",
-      "HEAD~1",
-      "HEAD^",
-      "v1.2.3",
-      "feature/x-y",
-      "HEAD@{1}",
-      "a1b2c3d4e5",
+describe("is_safe_intent", () => {
+  it("accepts a real one-line intent (spaces, punctuation, quotes)", () => {
+    for (const intent of [
+      "add dark mode to settings",
+      "fix the 500 on /api/users when the id is missing",
+      "support `--json` on the export command",
+      "rename the 'Save' button",
     ]) {
-      expect(is_safe_base(ref), ref).toBe(true);
+      expect(is_safe_intent(intent), intent).toBe(true);
     }
   });
-  it("rejects flag-shaped, empty, and whitespace/control bases", () => {
-    expect(is_safe_base("--force")).toBe(false);
-    expect(is_safe_base("-x")).toBe(false);
-    expect(is_safe_base("")).toBe(false);
-    expect(is_safe_base("a b")).toBe(false);
-    expect(is_safe_base(`a${String.fromCharCode(0)}b`)).toBe(false);
-  });
-  it("rejects git transport-option and shell-metacharacter injections (owns the boundary)", () => {
-    // `=`/`:` enable `--upload-pack=`/`ext::`; the rest are shell metachars. None is a legal ref char.
-    for (const bad of [
-      "origin/--upload-pack=x",
-      "ext::sh -c id",
-      "a=b",
-      "a:b",
-      "`id`",
-      "$(id)",
-      "a;b",
-      "a|b",
-      "a&b",
-      "a>b",
-      "a*b",
-      "a'b",
-    ]) {
-      expect(is_safe_base(bad), bad).toBe(false);
-    }
+  it("rejects empty, oversize, flag-shaped, and control-character intents", () => {
+    expect(is_safe_intent("")).toBe(false);
+    expect(is_safe_intent("x".repeat(301))).toBe(false);
+    expect(is_safe_intent("--launch something")).toBe(false);
+    expect(is_safe_intent("-x")).toBe(false);
+    expect(is_safe_intent("two\nlines")).toBe(false);
+    expect(is_safe_intent(`a${String.fromCharCode(0)}b`)).toBe(false);
   });
 });
 
@@ -160,9 +137,3 @@ describe("is_safe_segment", () => {
   });
 });
 
-describe("task_stem", () => {
-  it("strips a leading TASK- and lower-cases (mirrors the CLI review_slug)", () => {
-    expect(task_stem("TASK-001-App-Setup")).toBe("001-app-setup");
-    expect(task_stem("baseline-cleanup")).toBe("baseline-cleanup");
-  });
-});

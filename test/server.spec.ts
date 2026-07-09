@@ -19,7 +19,8 @@ import { createHash } from "node:crypto";
 import { create_server } from "../src/server.ts";
 
 // The server is driven over an in-memory transport against a STUB `suspec` binary (deterministic +
-// offline). The stub logs every argv to STUB_LOG so we can assert which subprocesses ran (or didn't).
+// offline). The stub logs every argv to STUB_LOG so we can assert which subprocesses ran (or didn't);
+// its safe-write verbs scaffold into STUB_STORE (a stand-in for the user-level store OUTSIDE the repo).
 const stubBin = join(
   dirname(fileURLToPath(import.meta.url)),
   "fixtures",
@@ -37,6 +38,7 @@ const FORBIDDEN_VERDICT_KEYS = [
 ];
 
 let root: string;
+let store: string;
 let logPath: string;
 
 async function connectClient(): Promise<{
@@ -90,35 +92,36 @@ function snapshot(dir: string): string {
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "suspec-mcp-srv-"));
+  store = mkdtempSync(join(tmpdir(), "suspec-mcp-store-"));
   mkdirSync(join(root, "specs", "a"), { recursive: true });
   writeFileSync(join(root, "specs", "a", "spec.md"), "# spec");
   logPath = `${root}.log`;
   process.env.STUB_LOG = logPath;
+  process.env.STUB_STORE = store;
 });
 afterEach(() => {
   delete process.env.STUB_LOG;
+  delete process.env.STUB_STORE;
   rmSync(root, { recursive: true, force: true });
+  rmSync(store, { recursive: true, force: true });
   if (existsSync(logPath)) {
     rmSync(logPath);
   }
 });
 
-// The READ + RECONCILE tier (the read-only sweep). The SAFE-WRITE tier (scaffold_*/split_task) is
-// exercised separately — it legitimately writes a scaffold, so it must NOT be in the no-write sweep.
+// The READ + RECONCILE tier (the read-only sweep). The SAFE-WRITE tier (scaffold_spec/split_task) is
+// exercised separately — it legitimately writes a store scaffold, so it must NOT be in the no-write sweep.
 const ALL_TOOL_CALLS = [
   { name: "suspec_get_status", arguments: {} },
-  { name: "suspec_list", arguments: { kind: "specs" } },
-  { name: "suspec_check_workspace", arguments: {} },
+  { name: "suspec_list", arguments: {} },
+  { name: "suspec_check_store", arguments: {} },
   { name: "suspec_check_file", arguments: { path: "specs/a/spec.md" } },
-  { name: "suspec_reconcile", arguments: { task: "feat" } },
-  { name: "suspec_get_task", arguments: { task: "feat" } },
-  { name: "suspec_get_spec", arguments: { spec: "SPEC-feat" } },
-  { name: "suspec_get_review", arguments: { task: "feat" } },
+  { name: "suspec_reconcile", arguments: { run: "feat" } },
   { name: "suspec_get_checks", arguments: {} },
 ];
 
 describe("suspec-mcp server", () => {
-  it("lists the read + reconcile + safe-write tools and resources", async () => {
+  it("lists the v2 read + reconcile + safe-write tools, and NO retired v1 tool", async () => {
     const { client, close } = await connectClient();
     try {
       const tools = (await client.listTools()).tools.map((t) => t.name).sort();
@@ -126,21 +129,28 @@ describe("suspec-mcp server", () => {
         [
           // read tier
           "suspec_check_file",
-          "suspec_check_workspace",
+          "suspec_check_store",
           "suspec_get_checks",
-          "suspec_get_review",
-          "suspec_get_spec",
           "suspec_get_status",
-          "suspec_get_task",
           "suspec_list",
-          // reconcile tier (one tool — AC-007)
+          // reconcile tier (one tool)
           "suspec_reconcile",
-          // safe-write tier (AC-009)
-          "suspec_scaffold_finding",
+          // safe-write tier
           "suspec_scaffold_spec",
           "suspec_split_task",
         ].sort(),
       );
+      // The retired v1 surface is GONE: the workspace verdict, the workspace-tree loaders, and the
+      // finding scaffold (promote is a gh-issue mutation now) have no v2 counterpart.
+      for (const retired of [
+        "suspec_check_workspace",
+        "suspec_get_task",
+        "suspec_get_spec",
+        "suspec_get_review",
+        "suspec_scaffold_finding",
+      ]) {
+        expect(tools).not.toContain(retired);
+      }
       const resources = (await client.listResources()).resources
         .map((r) => r.uri)
         .sort();
@@ -181,48 +191,103 @@ describe("suspec-mcp server", () => {
     }
   });
 
-  it("get_status surfaces the board", async () => {
+  it("get_status surfaces the store summary (active artifacts + the next ranking)", async () => {
     const { client, close } = await connectClient();
     try {
       const r = (await client.callTool({
         name: "suspec_get_status",
         arguments: {},
       })) as {
-        structuredContent: { ok: boolean; data: { specs: unknown[] } };
+        structuredContent: {
+          ok: boolean;
+          data: { active: { filename: string }[]; next: unknown[] };
+        };
       };
       expect(r.structuredContent.ok).toBe(true);
-      expect(r.structuredContent.data.specs.length).toBeGreaterThan(0);
+      expect(
+        r.structuredContent.data.active.map((a) => a.filename),
+      ).toContain("run-feat.md");
+      expect(r.structuredContent.data.next.length).toBeGreaterThan(0);
     } finally {
       await close();
     }
   });
 
-  it("reconcile on a task with no worktree returns a structured not-runnable result, not an error", async () => {
+  it("suspec_list enumerates the store's artifacts via `store list`", async () => {
+    const { client, close } = await connectClient();
+    try {
+      const r = (await client.callTool({
+        name: "suspec_list",
+        arguments: {},
+      })) as {
+        structuredContent: {
+          ok: boolean;
+          data: { store: string; active: { filename: string; kind: string }[] };
+        };
+      };
+      expect(r.structuredContent.ok).toBe(true);
+      expect(
+        r.structuredContent.data.active.map((a) => a.kind),
+      ).toContain("run");
+      const listCall = invocations().find((a) => a[0] === "store");
+      expect(listCall).toContain("list");
+    } finally {
+      await close();
+    }
+  });
+
+  it("check_store runs the store lint (`check` with NO file) and slices to the problem artifacts", async () => {
+    const { client, close } = await connectClient();
+    try {
+      const r = (await client.callTool({
+        name: "suspec_check_store",
+        arguments: {},
+      })) as {
+        structuredContent: {
+          ok: boolean;
+          data: { artifacts: { path: string }[] };
+        };
+      };
+      expect(r.structuredContent.ok).toBe(true);
+      // concise (default) keeps ONLY the artifact carrying a diagnostic
+      expect(r.structuredContent.data.artifacts).toHaveLength(1);
+      expect(r.structuredContent.data.artifacts[0].path).toContain(
+        "run-feat.md",
+      );
+      // and the CLI face is the bare store lint: `check --json` with no positional
+      const checkCall = invocations().find((a) => a[0] === "check");
+      expect(checkCall).toEqual(["check", "--json"]);
+    } finally {
+      await close();
+    }
+  });
+
+  it("reconcile on a missing run returns a structured no-such-run result, not an error", async () => {
     const { client, close } = await connectClient();
     try {
       const r = (await client.callTool({
         name: "suspec_reconcile",
-        arguments: { task: "noworktree" },
+        arguments: { run: "norun" },
       })) as {
         isError?: boolean;
         structuredContent: { ok: boolean; note?: string };
       };
       expect(r.isError).toBeFalsy();
       expect(r.structuredContent.ok).toBe(false);
-      // The specific not-runnable guidance, not merely the word "worktree" anywhere in the note.
-      expect(r.structuredContent.note).toMatch(/no live run to reconcile/i);
-      expect(r.structuredContent.note).toMatch(/launch the run first/i);
+      // The specific runs-appear-after-work guidance, not merely the error message echoed.
+      expect(r.structuredContent.note).toMatch(/no such run/i);
+      expect(r.structuredContent.note).toMatch(/suspec work/);
     } finally {
       await close();
     }
   });
 
-  it("reconcile derives a STRUCTURED human-attention list from the reconcile facts (AC-010)", async () => {
+  it("reconcile derives a STRUCTURED human-attention list from the run-review facts (AC-010)", async () => {
     const { client, close } = await connectClient();
     try {
       const r = (await client.callTool({
         name: "suspec_reconcile",
-        arguments: { task: "feat" },
+        arguments: { run: "feat" },
       })) as {
         structuredContent: {
           derived?: {
@@ -237,55 +302,14 @@ describe("suspec-mcp server", () => {
       };
       const attention = r.structuredContent.derived?.humanAttention ?? [];
       expect(attention.length).toBeGreaterThan(0);
-      // structured items (AC-010): the uncovered AC-002 surfaces by ref + category, not a flat string.
-      const ac002 = attention.find((a) => a.ref === "AC-002");
-      expect(ac002?.category).toBe("coverage");
-      expect(ac002?.message).toContain("AC-002");
-      expect(["blocking", "warning", "info"]).toContain(ac002?.severity);
-    } finally {
-      await close();
-    }
-  });
-
-  it("reconcile accepts a `spec` id for the task-less 1:1 review-to-spec case, passed VERBATIM", async () => {
-    const { client, close } = await connectClient();
-    try {
-      const r = (await client.callTool({
-        name: "suspec_reconcile",
-        arguments: { spec: "SPEC-feat" },
-      })) as { isError?: boolean; structuredContent: { ok: boolean } };
-      expect(r.isError).toBeFalsy();
-      // The CLI receives the spec id VERBATIM — never lowercased/stripped by task_stem (which would
-      // turn `SPEC-feat` into `spec-feat` and break resolution).
-      const reviewCall = invocations().find((argv) => argv[0] === "review");
-      expect(reviewCall).toContain("SPEC-feat");
-    } finally {
-      await close();
-    }
-  });
-
-  it("reconcile rejects passing neither task nor spec, and passing both (exactly one)", async () => {
-    const { client, close } = await connectClient();
-    try {
-      const neither = (await client.callTool({
-        name: "suspec_reconcile",
-        arguments: {},
-      })) as { isError?: boolean; content: { text: string }[] };
-      expect(neither.isError).toBe(true);
-      expect(neither.content[0].text).toMatch(/exactly one of/i);
-      const both = (await client.callTool({
-        name: "suspec_reconcile",
-        arguments: { task: "feat", spec: "SPEC-feat" },
-      })) as { isError?: boolean; content: { text: string }[] };
-      expect(both.isError).toBe(true);
-      expect(both.content[0].text).toMatch(/exactly one of/i);
-      // An invalid spec id (a separator) is rejected as a spec id — not stemmed, not run.
-      const badSpec = (await client.callTool({
-        name: "suspec_reconcile",
-        arguments: { spec: "a/b" },
-      })) as { isError?: boolean; content: { text: string }[] };
-      expect(badSpec.isError).toBe(true);
-      expect(badSpec.content[0].text).toMatch(/invalid spec id/i);
+      // structured items (AC-010): the AC-002 evidence gap surfaces by ref + category, not a flat string.
+      const gap = attention.find((a) => a.ref === "AC-002");
+      expect(gap?.category).toBe("evidence-gap");
+      expect(gap?.message).toContain("AC-002");
+      // the hard-error lint diagnostic surfaces as a BLOCKING artifact-lint item on its store path.
+      const lint = attention.find((a) => a.category === "artifact-lint");
+      expect(lint?.severity).toBe("blocking");
+      expect(lint?.ref).toContain("spec-x.md");
     } finally {
       await close();
     }
@@ -314,63 +338,18 @@ describe("suspec-mcp server", () => {
       for (const call of ALL_TOOL_CALLS) {
         await client.callTool(call);
       }
-      expect(snapshot(root)).toBe(before); // belt-and-suspenders: workspace byte-identical after a full sweep
+      expect(snapshot(root)).toBe(before); // belt-and-suspenders: repo byte-identical after a full sweep
       // The load-bearing, non-circular check: the stub drops a WRITE-FLAG-SEEN marker IFF it ever
-      // receives a write/mutation flag. It never appears → the adapter never passed one. (The
-      // snapshot above is weaker — the stub itself never writes — so the marker carries the real signal.)
+      // receives a write/mutation/dispatch flag. It never appears → the adapter never passed one. (The
+      // snapshot above is weaker — the stub itself never writes to cwd — so the marker carries the signal.)
       expect(existsSync(join(root, "WRITE-FLAG-SEEN"))).toBe(false);
-      // and no invocation ever carried a mutation flag
+      // and no invocation ever carried a mutation/dispatch flag
       const flags = invocations().flat();
-      for (const forbidden of ["--write", "--force", "--agent"]) {
+      for (const forbidden of ["--write", "--force", "--agent", "--launch"]) {
         expect(flags).not.toContain(forbidden);
       }
       // every invocation appended `--json` (the only flag the adapter adds)
       expect(invocations().every((argv) => argv.includes("--json"))).toBe(true);
-    } finally {
-      await close();
-    }
-  });
-
-  it("passes a valid --base (with a slash) to the CLI and rejects a flag-shaped base (AC/INV-004)", async () => {
-    const { client, close } = await connectClient();
-    try {
-      // A valid base ref containing `/` reaches the CLI as `--base origin/main` (not silently dropped).
-      await client.callTool({
-        name: "suspec_reconcile",
-        arguments: { task: "feat", base: "origin/main" },
-      });
-      const reviewCall = invocations().find((a) => a[0] === "review");
-      expect(reviewCall).toBeDefined();
-      expect(reviewCall).toContain("--base");
-      expect(reviewCall).toContain("origin/main");
-
-      // A flag-shaped base is rejected (isError) — never reaches the subprocess as a flag.
-      const r = (await client.callTool({
-        name: "suspec_reconcile",
-        arguments: { task: "feat", base: "--force" },
-      })) as { isError?: boolean };
-      expect(r.isError).toBe(true);
-      expect(invocations().flat()).not.toContain("--force");
-    } finally {
-      await close();
-    }
-  });
-
-  it("passes a TASK- prefixed id straight through to `suspec show task` (no pre-strip) — #blind-field-test", async () => {
-    const { client, close } = await connectClient();
-    try {
-      await client.callTool({
-        name: "suspec_get_task",
-        arguments: { task: "TASK-feat" },
-      });
-      const showCall = invocations().find(
-        (a) => a[0] === "show" && a[1] === "task",
-      );
-      expect(showCall).toBeDefined();
-      // The id reaches the CLI as 'TASK-feat' (un-stripped) — the CLI canonically resolves either
-      // form; pre-stripping to the bare 'feat' mismatched the tasks/TASK-feat.md `suspec new task` writes.
-      expect(showCall).toContain("TASK-feat");
-      expect(showCall).not.toContain("feat");
     } finally {
       await close();
     }
@@ -413,28 +392,25 @@ describe("suspec-mcp server", () => {
     }
   });
 
-  it("every id-taking tool rejects an unsafe id with isError and runs NO subprocess (the input boundary)", async () => {
+  it("every id-taking tool rejects an unsafe input with isError and runs NO subprocess (the input boundary)", async () => {
     const { client, close } = await connectClient();
     try {
       const unsafe = [
-        { name: "suspec_reconcile", arguments: { task: "../etc" } },
-        { name: "suspec_reconcile", arguments: { spec: "../etc" } },
-        { name: "suspec_get_task", arguments: { task: "../etc" } },
-        { name: "suspec_get_spec", arguments: { spec: "--help" } },
-        { name: "suspec_get_review", arguments: { task: ".." } },
-        { name: "suspec_scaffold_spec", arguments: { slug: "../etc" } },
+        { name: "suspec_reconcile", arguments: { run: "../etc" } },
+        { name: "suspec_reconcile", arguments: { run: "--help" } },
+        { name: "suspec_scaffold_spec", arguments: { intent: "--launch now" } },
+        { name: "suspec_scaffold_spec", arguments: { intent: "   " } },
         { name: "suspec_split_task", arguments: { spec: "../etc" } },
         {
           name: "suspec_split_task",
           arguments: { spec: "SPEC-x", scope: ["AC-001", "../etc"] },
         },
-        { name: "suspec_scaffold_finding", arguments: { from: "--help" } },
       ];
       for (const call of unsafe) {
         const r = (await client.callTool(call)) as { isError?: boolean };
-        expect(r.isError, `${call.name} must reject an unsafe id`).toBe(true);
+        expect(r.isError, `${call.name} must reject an unsafe input`).toBe(true);
       }
-      expect(invocations(), "no subprocess ran for any rejected id").toEqual(
+      expect(invocations(), "no subprocess ran for any rejected input").toEqual(
         [],
       );
     } finally {
@@ -442,18 +418,9 @@ describe("suspec-mcp server", () => {
     }
   });
 
-  it("the loader tools project the parsed artifact (get_task / get_checks)", async () => {
+  it("get_checks projects the checks contract", async () => {
     const { client, close } = await connectClient();
     try {
-      const task = (await client.callTool({
-        name: "suspec_get_task",
-        arguments: { task: "feat" },
-      })) as {
-        structuredContent: { ok: boolean; data: { value: { id: string } } };
-      };
-      expect(task.structuredContent.ok).toBe(true);
-      expect(task.structuredContent.data.value.id).toBe("TASK-feat");
-
       const checks = (await client.callTool({
         name: "suspec_get_checks",
         arguments: {},
@@ -468,24 +435,7 @@ describe("suspec-mcp server", () => {
     }
   });
 
-  // AC-008: validate_review_packet is folded into check_file (it was a thin alias of `suspec check`). A
-  // review packet is now checked through the one check_file path.
-  it("check_file refuses a path outside the root (isError, no subprocess) — the one check path (AC-008)", async () => {
-    const { client, close } = await connectClient();
-    try {
-      const r = (await client.callTool({
-        name: "suspec_check_file",
-        arguments: { path: "../../../etc/passwd" },
-      })) as { isError?: boolean; content: { text: string }[] };
-      expect(r.isError).toBe(true);
-      expect(r.content[0].text).toMatch(/outside the workspace root/);
-      expect(invocations()).toEqual([]);
-    } finally {
-      await close();
-    }
-  });
-
-  it("check_file surfaces the CLI check diagnostics through the envelope (a review packet checks here too)", async () => {
+  it("check_file surfaces the CLI check diagnostics through the envelope", async () => {
     const { client, close } = await connectClient();
     try {
       const r = (await client.callTool({
@@ -506,52 +456,14 @@ describe("suspec-mcp server", () => {
     }
   });
 
-  // --- AC-012 enumeration ---------------------------------------------------------------------------
-  it("suspec_list enumerates specs and tasks from the board (AC-012)", async () => {
-    const { client, close } = await connectClient();
-    try {
-      const specs = (await client.callTool({
-        name: "suspec_list",
-        arguments: { kind: "specs" },
-      })) as {
-        structuredContent: {
-          ok: boolean;
-          data: { kind: string; specs: { id: string }[] };
-        };
-      };
-      expect(specs.structuredContent.ok).toBe(true);
-      expect(specs.structuredContent.data.kind).toBe("specs");
-      expect(specs.structuredContent.data.specs.map((s) => s.id)).toContain(
-        "SPEC-x",
-      );
-
-      const tasks = (await client.callTool({
-        name: "suspec_list",
-        arguments: { kind: "tasks" },
-      })) as {
-        structuredContent: {
-          data: { kind: string; tasks: { id: string; spec: string }[] };
-        };
-      };
-      expect(tasks.structuredContent.data.kind).toBe("tasks");
-      const taskX = tasks.structuredContent.data.tasks.find(
-        (t) => t.id === "TASK-x",
-      );
-      expect(taskX?.spec).toBe("SPEC-x");
-    } finally {
-      await close();
-    }
-  });
-
   // --- AC-013 concise/detailed response_format ------------------------------------------------------
   it("a concise read returns materially fewer tokens than detailed, and advertises the format (AC-013)", async () => {
     const { client, close } = await connectClient();
     try {
       const call = (format?: string) =>
         client.callTool({
-          name: "suspec_get_spec",
+          name: "suspec_get_status",
           arguments: {
-            spec: "SPEC-feat",
             ...(format ? { response_format: format } : {}),
           },
         }) as Promise<{
@@ -566,7 +478,7 @@ describe("suspec-mcp server", () => {
       const len = (d: unknown) => JSON.stringify(d).length;
       const detailedLen = len(detailed.structuredContent.data);
       const conciseLen = len(concise.structuredContent.data);
-      // Concise is materially smaller — the slice drops the Execution prose, line numbers, frontmatter.
+      // Concise is materially smaller — the slice drops the archived listing.
       expect(conciseLen).toBeLessThan(detailedLen);
       // default == concise byte-for-byte (concise is the default)
       expect(len(dflt.structuredContent.data)).toBe(conciseLen);
@@ -575,61 +487,67 @@ describe("suspec-mcp server", () => {
     }
   });
 
-  // --- AC-009 safe-write tier -----------------------------------------------------------------------
-  it("the safe-write tier scaffolds artifacts (spec/task/finding) verdict-free, never overwriting (AC-009)", async () => {
+  // --- the safe-write tier ---------------------------------------------------------------------------
+  it("the safe-write tier scaffolds STORE artifacts (spec from intent / task slice) verdict-free", async () => {
     const { client, close } = await connectClient();
     try {
+      const before = snapshot(root);
       const spec = (await client.callTool({
         name: "suspec_scaffold_spec",
-        arguments: { slug: "new-thing" },
+        arguments: { intent: "add   dark mode\tto settings" },
       })) as {
         isError?: boolean;
         structuredContent: {
           ok: boolean;
           noVerdictIssued: boolean;
-          data: { specId: string };
+          data: { spec: string; spec_path: string; launched: boolean };
         };
       };
       expect(spec.isError).toBeFalsy();
       expect(spec.structuredContent.noVerdictIssued).toBe(true);
-      expect(spec.structuredContent.data.specId).toBe("SPEC-new-thing");
-      // the scaffold actually landed on disk (the stub writes it, mirroring the CLI)
-      expect(existsSync(join(root, "specs", "new-thing", "spec.md"))).toBe(true);
-      // it used `new`, NOT a `--write`/`--force`/`--agent` mutation flag
-      const newCall = invocations().find((a) => a[0] === "new");
-      expect(newCall).toContain("spec");
-      for (const forbidden of ["--write", "--force", "--agent"]) {
-        expect(invocations().flat()).not.toContain(forbidden);
-      }
+      expect(spec.structuredContent.data.spec).toBe(
+        "SPEC-add-dark-mode-to-settings",
+      );
+      expect(spec.structuredContent.data.launched).toBe(false);
+      // the scaffold landed in the STORE (outside the repo), and the repo stayed byte-identical
+      expect(
+        existsSync(join(store, "spec-add-dark-mode-to-settings.md")),
+      ).toBe(true);
+      expect(snapshot(root)).toBe(before);
+      // it used `write spec` with the WHITESPACE-NORMALIZED intent as ONE positional, and no
+      // mutation/dispatch flag
+      const writeCall = invocations().find((a) => a[0] === "write");
+      expect(writeCall).toEqual([
+        "write",
+        "spec",
+        "add dark mode to settings",
+        "--json",
+      ]);
 
       const task = (await client.callTool({
         name: "suspec_split_task",
         arguments: { spec: "SPEC-new-thing", scope: ["AC-001", "AC-002"] },
       })) as {
         isError?: boolean;
-        structuredContent: { data: { taskId: string; scope: string[] } };
+        structuredContent: {
+          data: { taskId: string; specId: string; scope: string[] };
+        };
       };
       expect(task.isError).toBeFalsy();
       expect(task.structuredContent.data.scope).toEqual(["AC-001", "AC-002"]);
+      expect(task.structuredContent.data.specId).toBe("SPEC-new-thing");
+      expect(existsSync(join(store, "task-new-thing.md"))).toBe(true);
       const taskCall = invocations().find((a) => a[0] === "new" && a[1] === "task");
       expect(taskCall).toContain("--from");
       expect(taskCall).toContain("SPEC-new-thing");
       expect(taskCall).toContain("--scope");
       expect(taskCall).toContain("AC-001,AC-002");
-
-      const finding = (await client.callTool({
-        name: "suspec_scaffold_finding",
-        arguments: { from: "TASK-new-thing" },
-      })) as {
-        isError?: boolean;
-        structuredContent: { data: { slug: string; from: string } };
-      };
-      expect(finding.isError).toBeFalsy();
-      expect(finding.structuredContent.data.from).toBe("TASK-new-thing");
-      expect(existsSync(join(root, "findings", "new-thing.md"))).toBe(true);
+      for (const forbidden of ["--write", "--force", "--agent", "--launch"]) {
+        expect(invocations().flat()).not.toContain(forbidden);
+      }
 
       // The whole safe-write tier authored NO verdict key anywhere.
-      for (const sc of [spec, task, finding]) {
+      for (const sc of [spec, task]) {
         expect(Object.keys(sc.structuredContent)).not.toContain("verdict");
       }
     } finally {
@@ -637,7 +555,7 @@ describe("suspec-mcp server", () => {
     }
   });
 
-  it("split_task with no scope omits --scope (an unbounded task) and stays verdict-free (AC-009)", async () => {
+  it("split_task with no scope omits --scope (an unbounded task) and stays verdict-free", async () => {
     const { client, close } = await connectClient();
     try {
       const r = (await client.callTool({

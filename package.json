@@ -1,7 +1,7 @@
 {
   "name": "suspec-mcp",
-  "version": "0.2.0",
-  "description": "An MCP stdio server that gives agent clients Suspec's read + reconcile facts under a no-verdict envelope, plus a verdict-free safe-write tier (scaffold spec/task/finding) — built for non-terminal clients (Claude Desktop, Cursor) without a shell. Reconcile-only, issues no verdict.",
+  "version": "0.3.0",
+  "description": "An MCP stdio server that gives agent clients Suspec's store-based read + reconcile facts under a no-verdict envelope, plus a verdict-free safe-write tier (scaffold store spec / task slice) — built for non-terminal clients (Claude Desktop, Cursor) without a shell. Reconcile-only, issues no verdict.",
   "type": "module",
   "license": "MIT",
   "author": "José Costa",

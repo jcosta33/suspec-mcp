@@ -13,37 +13,44 @@ const here = dirname(fileURLToPath(import.meta.url));
 const stub = join(here, 'fixtures', 'stub-suspec.mjs');
 const nonjson = join(here, 'fixtures', 'nonjson-suspec.mjs');
 
-// The read/error paths run with cwd=here (no writes). The SAFE-WRITE stub paths (new/promote) write a
-// scaffold to cwd, so those tests run against a throwaway temp cwd — never the repo tree.
+// The read/error paths run with cwd=here (no writes). The SAFE-WRITE stub paths (write/new) write
+// their scaffold only into STUB_STORE (unset here), so no temp cwd is needed — but the flag test
+// still runs against a throwaway cwd as belt-and-suspenders.
 const env = (bin: string): SuspecEnv => ({ bin, cwd: here });
 const tmpEnv = (bin: string): SuspecEnv => ({ bin, cwd: mkdtempSync(join(tmpdir(), 'suspec-mcp-invoke-')) });
 
 describe('invoke_suspec — the subprocess edge', () => {
     it('refuses a non-allow-listed verb (defense-in-depth programming guard)', () => {
-        // @ts-expect-error — deliberately passing a verb outside the allow-list to prove it throws.
         expect(() => invoke_suspec(env(stub), 'rm', ['-rf', '/'])).toThrow(/non-allow-listed/);
+    });
+
+    it('refuses the RETIRED mutation verbs (promote opens a gh issue; work/done/evidence act)', () => {
+        // v2: `promote` left the safe-write tier (it creates a GitHub issue + archives the finding).
+        for (const verb of ['promote', 'work', 'done', 'evidence', 'fix']) {
+            expect(() => invoke_suspec(env(stub), verb), verb).toThrow(/non-allow-listed/);
+        }
     });
 
     it('always appends --json and never a write flag', () => {
         const r = invoke_suspec(env(stub), 'status');
         expect(r.invocation.command).toMatch(/--json$/);
-        expect(r.invocation.command).not.toMatch(/--write|--force|--agent/);
+        expect(r.invocation.command).not.toMatch(/--write|--force|--agent|--launch/);
     });
 
     it('returns kind:"ok" with the parsed data on success', () => {
         const r = invoke_suspec(env(stub), 'status');
         expect(r.kind).toBe('ok');
         if (r.kind === 'ok') {
-            expect((r.data as { specs: unknown[] }).specs.length).toBeGreaterThan(0);
+            expect((r.data as { active: unknown[] }).active.length).toBeGreaterThan(0);
         }
     });
 
     it('returns kind:"structured-error" when the CLI emits an error object (exit 2)', () => {
-        const r = invoke_suspec(env(stub), 'review', ['noworktree']);
+        const r = invoke_suspec(env(stub), 'review', ['norun']);
         expect(r.kind).toBe('structured-error');
         if (r.kind === 'structured-error') {
-            expect(r.error.error).toBe('Usage');
-            expect(r.error.message).toMatch(/no worktree/);
+            expect(r.error.error).toBe('store_run_not_found');
+            expect(r.error.message).toMatch(/no run norun/);
         }
     });
 
@@ -83,13 +90,6 @@ describe('invoke_suspec — the subprocess edge', () => {
         }
     });
 
-    it('appends --base only when a non-empty base is given', () => {
-        const withBase = invoke_suspec(env(stub), 'review', ['feat'], { base: 'origin/main' });
-        expect(withBase.invocation.command).toMatch(/--base origin\/main/);
-        const noBase = invoke_suspec(env(stub), 'review', ['feat'], { base: '' });
-        expect(noBase.invocation.command).not.toMatch(/--base/);
-    });
-
     it('passes allow-listed flags (--from/--scope) through to the safe-write verbs', () => {
         const e = tmpEnv(stub);
         try {
@@ -104,10 +104,13 @@ describe('invoke_suspec — the subprocess edge', () => {
         }
     });
 
-    it('refuses a non-allow-listed FLAG (defense-in-depth: a slip that tried --write would throw)', () => {
-        expect(() =>
-            // a programming slip — the tools never build this, but a write flag must NEVER pass silently.
-            invoke_suspec(env(stub), 'new', ['spec', 'x'], { flags: { '--write': 'true' } })
-        ).toThrow(/non-allow-listed flag/);
+    it('refuses a non-allow-listed FLAG (defense-in-depth: a slip that tried --write or --launch would throw)', () => {
+        for (const flag of ['--write', '--launch', '--base']) {
+            expect(() =>
+                // a programming slip — the tools never build this, but a mutation/dispatch flag must
+                // NEVER pass silently (--base left the allow-list with the v1 reconcile surface).
+                invoke_suspec(env(stub), 'write', ['spec', 'x'], { flags: { [flag]: 'true' } })
+            ).toThrow(/non-allow-listed flag/);
+        }
     });
 });

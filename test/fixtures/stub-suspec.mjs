@@ -1,43 +1,66 @@
 #!/usr/bin/env node
-// A stub `suspec` binary for deterministic, offline suspec-mcp tests. Records every invocation's argv to
-// STUB_LOG (so tests can assert which subprocesses ran / that no write flag was ever passed) and emits
-// fixture JSON to stdout keyed off the verb — mirroring the real CLI's --json shapes.
+// A stub `suspec` binary for deterministic, offline suspec-mcp tests — the v2 STORE surface. Records
+// every invocation's argv to STUB_LOG (so tests can assert which subprocesses ran / that no write flag
+// was ever passed) and emits fixture JSON to stdout keyed off the verb — mirroring the real CLI's
+// --json shapes. The safe-write verbs write their scaffold into STUB_STORE (a stand-in for the
+// user-level store, OUTSIDE the workspace) when that env var is set — never into cwd (the repo).
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 
 const argv = process.argv.slice(2);
 if (process.env.STUB_LOG) {
   appendFileSync(process.env.STUB_LOG, JSON.stringify(argv) + "\n");
 }
-// Make the no-write test non-circular: if a write/mutation flag is EVER passed, drop a marker into the
-// workspace (cwd). The test then asserts the marker never appears — a real failure if the adapter leaks
-// a write flag, not a tautology about a non-writing stub.
-if (argv.some((a) => a === "--write" || a === "--force" || a === "--agent")) {
+// Make the no-write test non-circular: if a write/mutation/dispatch flag is EVER passed, drop a marker
+// into the workspace (cwd). The test then asserts the marker never appears — a real failure if the
+// adapter leaks such a flag, not a tautology about a non-writing stub.
+if (
+  argv.some(
+    (a) => a === "--write" || a === "--force" || a === "--agent" || a === "--launch",
+  )
+) {
   appendFileSync(join(process.cwd(), "WRITE-FLAG-SEEN"), "1");
 }
 const emit = (obj) => process.stdout.write(JSON.stringify(obj));
 const verb = argv[0];
 const positionals = argv.slice(1).filter((a) => !a.startsWith("--"));
+// The stand-in store dir (outside the workspace). Path strings are emitted either way; files are
+// written only when STUB_STORE is set.
+const store = process.env.STUB_STORE ?? "/stub/store";
+const inStore = (name, content) => {
+  if (process.env.STUB_STORE) {
+    mkdirSync(store, { recursive: true });
+    writeFileSync(join(store, name), content);
+  }
+  return join(store, name);
+};
+
+const ACTIVE = [
+  { filename: "spec-x.md", kind: "spec", ageDays: 0 },
+  { filename: "run-feat.md", kind: "run", ageDays: 1 },
+];
+const ARCHIVED = [{ filename: "run-old.md", kind: "run", ageDays: 44 }];
+const NEXT = [
+  {
+    rank: 3,
+    kind: "gate-gaps",
+    ref: "feat",
+    detail: "run feat finished but 1 AC(s) lack exit-0 evidence (AC-002)",
+    action:
+      "capture it: suspec evidence add feat --ac <AC> -- <command>, then suspec done feat",
+  },
+];
 
 if (verb === "status") {
+  emit({ level: "clean", active: ACTIVE, archived: ARCHIVED, next: NEXT });
+} else if (verb === "store" && positionals[0] === "list") {
   emit({
     level: "clean",
-    specs: [
-      {
-        id: "SPEC-x",
-        status: "ready",
-        tasks: [
-          {
-            id: "TASK-x",
-            status: "ready",
-            hasReview: true,
-            reviewStatus: "pass",
-          },
-        ],
-      },
-    ],
-    tasksWithoutReview: [],
-    needsHuman: [],
+    store,
+    active_count: ACTIVE.length,
+    archived_count: ARCHIVED.length,
+    active: ACTIVE,
+    archived: ARCHIVED,
   });
 } else if (verb === "check") {
   const path = positionals[0];
@@ -50,160 +73,118 @@ if (verb === "status") {
       ],
     });
   } else {
+    // The store lint (v2 `check` with no args) — one clean artifact + one carrying a diagnostic.
     emit({
-      level: "clean",
-      verdict: "clean",
-      specs: [{ path: "specs/a/spec.md", level: "clean", diagnostics: [] }],
-      changePlans: [
-        { path: "change-plans/p.md", level: "clean", diagnostics: [] },
+      level: "warning",
+      runCount: 1,
+      specCount: 1,
+      artifacts: [
+        { path: join(store, "spec-x.md"), diagnostics: [] },
+        {
+          path: join(store, "run-feat.md"),
+          diagnostics: [
+            {
+              check: "RUN01",
+              severity: "warning",
+              message: "run record missing a worktree field",
+            },
+          ],
+        },
       ],
-      workspaceFindings: [],
     });
   }
 } else if (verb === "review") {
-  const stem = positionals[0];
-  if (stem === "noworktree") {
+  const slug = positionals[0];
+  if (slug === "norun") {
     process.stdout.write(
       JSON.stringify({
-        error: "Usage",
-        message: `no worktree found for ${stem} — launch the run before reviewing it`,
+        error: "store_run_not_found",
+        message: `no run ${slug} in the store (searched ${join(store, `run-${slug}.md`)})`,
       }),
     );
     process.exit(2);
   }
+  // The v2 run-vs-spec reconcile: artifact lint (one hard-error) + evidence rows (one verified, one
+  // missing) + the gate gaps — the same rows `suspec done` gates on.
   emit({
-    level: "warning",
-    task: stem,
-    diffChangedFiles: ["src/a.ts", "package-lock.json"],
-    // The message is single-sourced in the CLI (checksContract.ts `coverage_message`) and ends with the
-    // `(uncovered)` / `(orphan)` kind suffix — the stub mirrors that exact wording.
-    coverage: [
+    level: "blocking",
+    runSlug: slug,
+    specId: "SPEC-x",
+    lint: [
+      { path: join(store, `run-${slug}.md`), diagnostics: [] },
       {
-        id: "AC-002",
-        kind: "uncovered",
-        message:
-          "requirement AC-002 is in scope but has no coverage row (uncovered)",
+        path: join(store, "spec-x.md"),
+        diagnostics: [
+          {
+            check: "C007",
+            severity: "hard-error",
+            message: "spec has {{TBD}} placeholders at status ready",
+          },
+        ],
       },
     ],
-    verifyBinding: [
+    evidence: [
       {
-        id: "AC-003",
-        kind: "cmd-mismatch",
-        message: "verify block cmd does not match the requirement command",
+        ac: "AC-001",
+        command: "pnpm test",
+        exit: 0,
+        evidenceRef: "001-pnpm-test.md",
+        provenance: "cli-verified",
+        status: "verified",
+      },
+      {
+        ac: "AC-002",
+        command: "`second test`",
+        exit: null,
+        evidenceRef: null,
+        provenance: null,
+        status: "missing",
       },
     ],
-    scopeDivergence: [],
-    selfReport: {
-      claimedNotInDiff: [],
-      inDiffNotClaimed: ["package-lock.json"],
-      outsideScope: ["package-lock.json"],
-    },
-    doNotChangeTouched: ["src/auth/token-family.ts"],
-    emptyEvidencePassRows: ["AC-004"],
-    packetStructural: {
-      badResultCells: [],
-      badStatus: null,
-      statusPassContradicted: false,
-      missingSections: [],
-    },
-    hasReviewPacket: true,
+    gaps: ["AC-002"],
   });
-} else if (verb === "show") {
-  const kind = positionals[0];
-  const ref = positionals[1];
-  if (kind === "checks") {
-    emit({
-      level: "clean",
-      kind: "checks",
-      value: {
-        version: "0.6.0",
-        checks: [{ id: "C001", name: "unique-ids", severity: "hard-error" }],
-      },
-    });
-  } else if (kind === "task" && ref) {
-    emit({
-      level: "clean",
-      kind: "task",
-      value: {
-        id: `TASK-${ref}`,
-        source: "SPEC-x",
-        status: "ready",
-        scope: ["AC-001"],
-        affectedAreas: ["src"],
-        doNotChange: [],
-        claimedChangedFiles: [],
-        embeddedSpecId: null,
-        embeddedRequirements: [],
-      },
-    });
-  } else if (kind === "spec" && ref) {
-    emit({
-      level: "clean",
-      kind: "spec",
-      value: {
-        frontmatter: {
-          type: "spec",
-          id: ref,
-          status: "ready",
-          format: null,
-          sources: [],
-        },
-        requirements: [{ id: "AC-001", line: 5, verifyCommand: "a test" }],
-        sectionTitles: ["Requirements", "Execution"],
-        openQuestionsPresent: false,
-        execution: "- 2026-06-26 — v0 shipped.",
-      },
-    });
-  } else if (kind === "review" && ref) {
-    emit({
-      level: "clean",
-      kind: "review",
-      value: {
-        status: "needs-human",
-        sectionTitles: ["Requirement coverage"],
-        coverageRows: [{ id: "AC-001", result: "Pass", evidence: "pasted" }],
-        verifyBlocks: [],
-        frontmatter: {
-          status: "needs-human",
-          spec: null,
-          task: `TASK-${ref}`,
-          pr: null,
-          reviewedSha: null,
-          evidenceHash: null,
-        },
-      },
-    });
-  } else {
+} else if (verb === "show" && positionals[0] === "checks") {
+  emit({
+    level: "clean",
+    kind: "checks",
+    value: {
+      version: "0.15.0",
+      checks: [{ id: "C001", name: "unique-ids", severity: "hard-error" }],
+    },
+  });
+} else if (verb === "write" && positionals[0] === "spec") {
+  // `write spec "<intent>"` — the ONE spec scaffold, store-rooted. Slugs the intent like the CLI.
+  const intent = positionals[1];
+  if (!intent) {
     process.stdout.write(
-      JSON.stringify({
-        error: "Usage",
-        message: `cannot show ${kind} ${ref ?? ""}`,
-      }),
+      JSON.stringify({ error: "Usage", message: "write spec needs an intent" }),
     );
     process.exit(2);
   }
+  const slug = intent
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  const spec_path = inStore(
+    `spec-${slug}.md`,
+    `---\ntype: spec\nid: SPEC-${slug}\nstatus: draft\n---\n\n${intent}\n`,
+  );
+  emit({
+    level: "clean",
+    spec: `SPEC-${slug}`,
+    spec_path,
+    created: true,
+    launched: false,
+  });
 } else if (verb === "new") {
-  // The verdict-free safe-write tier: `new spec <slug>` and `new task --from <SPEC> [--scope …]`. The
-  // stub WRITES a scaffold file (mirroring the real CLI) so the safe-write test can assert one appeared,
-  // then emits the report shape. It never overwrites and never emits a verdict.
+  // `new task --from <SPEC> [--scope …]` — the store task slice (scope copied, never invented).
   const type = positionals[0];
   const flag = (name) => {
     const i = argv.indexOf(name);
     return i >= 0 ? argv[i + 1] : undefined;
   };
-  if (type === "spec") {
-    const slug = positionals[1];
-    if (!slug) {
-      process.stdout.write(
-        JSON.stringify({ error: "Usage", message: "new spec needs a slug" }),
-      );
-      process.exit(2);
-    }
-    const path = join(process.cwd(), "specs", slug, "spec.md");
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, `---\ntype: spec\nid: SPEC-${slug}\n---\n# ${slug}\n`);
-    emit({ level: "clean", path, specId: `SPEC-${slug}` });
-  } else if (type === "task") {
+  if (type === "task") {
     const from = flag("--from");
     if (!from) {
       process.stdout.write(
@@ -219,31 +200,25 @@ if (verb === "status") {
       typeof scopeFlag === "string" && scopeFlag.length > 0
         ? scopeFlag.split(",")
         : [];
-    const taskId = `TASK-${from.replace(/^SPEC-/i, "").toLowerCase()}`;
-    const path = join(process.cwd(), "tasks", `${taskId}.md`);
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, `---\ntype: task\nid: ${taskId}\nsource: ${from}\n---\n`);
-    emit({ level: "clean", path, taskId, scope });
+    const slug = from.replace(/^SPEC-/i, "").toLowerCase();
+    const path = inStore(
+      `task-${slug}.md`,
+      `---\ntype: task\nid: TASK-${slug}\nsource: ${from}\n---\n`,
+    );
+    emit({
+      level: "clean",
+      path,
+      taskId: `TASK-${slug}`,
+      specId: from,
+      scope,
+      autoSuffixed: false,
+    });
   } else {
     process.stdout.write(
       JSON.stringify({ error: "Usage", message: `unknown new type: ${type}` }),
     );
     process.exit(2);
   }
-} else if (verb === "promote") {
-  // `promote <task>` scaffolds one candidate finding (no learning asserted, no board, no verdict).
-  const task = positionals[0];
-  if (!task) {
-    process.stdout.write(
-      JSON.stringify({ error: "Usage", message: "promote needs a task id" }),
-    );
-    process.exit(2);
-  }
-  const slug = task.replace(/^(?:TASK|REVIEW|AUDIT|INV)-/i, "").toLowerCase();
-  const path = join(process.cwd(), "findings", `${slug}.md`);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `---\ntype: finding\nid: FINDING-${slug}\nstatus: candidate\nfrom: ${task}\n---\n`);
-  emit({ level: "clean", path, slug, from: task });
 } else {
   process.stdout.write(
     JSON.stringify({ error: "Usage", message: `unknown verb: ${verb}` }),

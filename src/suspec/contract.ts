@@ -1,10 +1,11 @@
-// zod schemas mirroring the suspec CLI's real `--json` shapes (verified against the binary). These are
-// the DRIFT TRIPWIRE — and here is exactly where it fires: the TEST SUITE parses every checked-in
-// fixture through these schemas (contract.spec.ts), and generated-fixtures.spec.ts regenerates the
-// fixtures against the real binary, so a renamed/dropped field fails a test run. At RUNTIME only
-// ReviewReportSchema is parsed (envelope.ts); the other payload reads go through slices.ts's defensive
-// helpers, which degrade to missing fields rather than failing loudly. So the wire trips in CI/dev,
-// not in the running server — do not read this file as a live runtime guarantee for every shape.
+// zod schemas mirroring the suspec CLI's real v2 `--json` shapes (verified against the binary — the
+// store-based surface of ADR-0137 / SPEC-suspec-v2). These are the DRIFT TRIPWIRE — and here is exactly
+// where it fires: the TEST SUITE parses every checked-in fixture through these schemas
+// (contract.spec.ts), and generated-fixtures.spec.ts regenerates the fixtures against the real binary,
+// so a renamed/dropped field fails a test run. At RUNTIME only RunReviewSchema is parsed (envelope.ts);
+// the other payload reads go through slices.ts's defensive helpers, which degrade to missing fields
+// rather than failing loudly. So the wire trips in CI/dev, not in the running server — do not read this
+// file as a live runtime guarantee for every shape.
 // `.passthrough()` keeps unknown extra fields (additive CLI changes don't break us); the named fields
 // are the ones suspec-mcp actually reads.
 //
@@ -12,47 +13,80 @@
 // on its exact value-set — so a new/renamed value the adapter cannot interpret trips the wire. A field the
 // adapter only PASSES THROUGH (surfaces in `data` / a concise slice, never switches on) is modelled as
 // `z.string()`: a benign additive CLI enum value must NOT convert into a suspec-mcp break for no consumer
-// benefit. The only payload enum the adapter branches on is `ReviewReport.level` (`=== "blocking"` scales
-// the derived human-attention severity), so OutcomeLevel stays closed; every diagnostic `code`/`kind`/
-// `severity`/`verdict`/verify-`result` is pass-through and is `z.string()`. The always-present top-level
-// lists stay required (a dropped list the adapter iterates still trips the wire).
+// benefit. The only payload enum the adapter branches on in v2 is the store-lint diagnostic `severity`
+// (`=== "hard-error"` scales the derived human-attention severity), so it stays closed; `level`, every
+// evidence-row `status`/`provenance`, and the store-artifact/next `kind`s are pass-through → `z.string()`.
+// The always-present top-level lists stay required (a dropped list the adapter iterates still trips).
 
 import { z } from "zod";
 
-// The three exit classes an engine success carries (unixOutcome.ts `OutcomeLevel`). NOT a review
-// result — it is the CLI's advisory severity (clean = exit 0, warning = 1, blocking = 2). CLOSED because
-// the adapter branches on it (`ReviewReport.level === "blocking"` in envelope.ts).
-const OutcomeLevel = z.enum(["clean", "warning", "blocking"]);
-
-// --- suspec status --json  → DerivedBoard (deriveBoard.ts) -----------------------------------------
-const BoardTask = z
-  .object({
-    id: z.string(),
-    status: z.string(),
-    hasReview: z.boolean(),
-    reviewStatus: z.string().nullable(),
-  })
-  .passthrough(); // reviewStatus is `string | null` (deriveBoard.ts) — null for an unreviewed task; status is free-form frontmatter
-const BoardSpec = z
-  .object({ id: z.string(), status: z.string(), tasks: z.array(BoardTask) })
+// --- suspec status --json → the store summary (status.ts: listing + next ranking) ------------------
+// One store artifact with its age (listStoreArtifacts.ts `StoreArtifactAge`). `kind` is pass-through.
+const StoreArtifact = z
+  .object({ filename: z.string(), kind: z.string(), ageDays: z.number() })
   .passthrough();
-export const DerivedBoardSchema = z
+// One attention item from the `next` ranking (nextAction.ts `NextItem`). All pass-through fields.
+const NextItem = z
   .object({
-    level: OutcomeLevel,
-    specs: z.array(BoardSpec),
-    // The board's two headline triage lists (deriveBoard.ts) — review-ready tasks with no packet,
-    // and tasks whose review status reads needs-human/blocked. Always emitted; modelled so a drop trips.
-    tasksWithoutReview: z.array(z.string()),
-    needsHuman: z.array(z.string()),
+    rank: z.number(),
+    kind: z.string(),
+    ref: z.string(),
+    detail: z.string(),
+    action: z.string(),
   })
   .passthrough();
-export type DerivedBoard = z.infer<typeof DerivedBoardSchema>;
+export const StoreStatusSchema = z
+  .object({
+    level: z.string(),
+    active: z.array(StoreArtifact),
+    archived: z.array(StoreArtifact),
+    next: z.array(NextItem),
+  })
+  .passthrough();
+export type StoreStatus = z.infer<typeof StoreStatusSchema>;
 
-// --- suspec check [file] --json (checkSpec.ts / checkWorkspace.ts) ---------------------------------
-const Diagnostic = z
+// --- suspec store list --json (store.ts `list`) ----------------------------------------------------
+export const StoreListSchema = z
+  .object({
+    level: z.string(),
+    store: z.string(),
+    active_count: z.number(),
+    archived_count: z.number(),
+    active: z.array(StoreArtifact),
+    archived: z.array(StoreArtifact),
+  })
+  .passthrough();
+export type StoreList = z.infer<typeof StoreListSchema>;
+
+// --- suspec check --json (no args) → the store lint (lintStoreArtifacts.ts) ------------------------
+// A store-lint diagnostic (lintRunArtifacts.ts `StoreLintDiagnostic`): `check` is a contract C-code or
+// a store-local code (RUN01, EV01..EV03) — pass-through. `severity` is CLOSED: the adapter branches on
+// `=== "hard-error"` to scale the derived human-attention severity (envelope.ts).
+const StoreLintDiagnostic = z
+  .object({
+    check: z.string(),
+    severity: z.enum(["hard-error", "warning"]),
+    message: z.string(),
+  })
+  .passthrough();
+const StoreLintArtifact = z
+  .object({ path: z.string(), diagnostics: z.array(StoreLintDiagnostic) })
+  .passthrough();
+export const StoreLintSchema = z
+  .object({
+    level: z.string(),
+    runCount: z.number(),
+    specCount: z.number(),
+    artifacts: z.array(StoreLintArtifact),
+  })
+  .passthrough();
+export type StoreLint = z.infer<typeof StoreLintSchema>;
+
+// --- suspec check <file> --json (checkSpec.ts / checkReviewFile.ts / checkChangePlan.ts) ------------
+// Unchanged from v1: the per-file artifact check. Diagnostic `code`/`severity` are pass-through.
+const FileDiagnostic = z
   .object({
     code: z.string(),
-    // pass-through (AC-011) → z.string(), not a closed enum.
     severity: z.string(),
     message: z.string(),
     line: z.number().nullable().optional(),
@@ -60,275 +94,91 @@ const Diagnostic = z
   .passthrough();
 export const FileCheckSchema = z
   .object({
-    level: OutcomeLevel,
+    level: z.string(),
     path: z.string(),
-    diagnostics: z.array(Diagnostic),
+    diagnostics: z.array(FileDiagnostic),
   })
   .passthrough();
 export type FileCheck = z.infer<typeof FileCheckSchema>;
 
-const WorkspaceSpecCheck = z
+// --- suspec review <RUN> --json → the run-vs-spec reconcile (review.ts, SPEC-suspec-v2 AC-013) ------
+// Two read-only layers, facts only, no verdict: `lint` (the run's store artifacts through the checks
+// contract) and `evidence` (every spec AC against the run's evidence records — the same rows `done`
+// gates on). `gaps` lists the AC ids short of the gate. Evidence-row fields are pass-through: the
+// adapter derives human-attention from the `gaps` list + each diagnostic's message, never from `status`.
+const EvidenceRow = z
   .object({
-    path: z.string(),
-    level: OutcomeLevel,
-    diagnostics: z.array(Diagnostic),
+    ac: z.string(),
+    command: z.string().nullable(),
+    exit: z.number().nullable(),
+    evidenceRef: z.string().nullable(),
+    provenance: z.string().nullable(),
+    status: z.string(),
   })
   .passthrough();
-// A workspace-level finding (checkWorkspace.ts `WorkspaceFinding`) — a C002/C017 collision, a kit-
-// validity problem (placeholder / missing-template / agents-oversize), or one of the reconcile-only
-// advisories (supersede-* / duplicate-content / unpromoted-finding / incomplete-execution-digest). These
-// live OUTSIDE any spec's diagnostics, so an agent reading only `specs[]` would miss them. The `code` is
-// pass-through (AC-011) → z.string(); the `message` (which the agent reads) staying required IS the
-// tripwire: a dropped message field still trips the wire.
-const WorkspaceFinding = z
+export const RunReviewSchema = z
   .object({
-    code: z.string(),
-    message: z.string(),
+    level: z.string(),
+    runSlug: z.string(),
+    specId: z.string().nullable(),
+    lint: z.array(StoreLintArtifact),
+    evidence: z.array(EvidenceRow),
+    gaps: z.array(z.string()),
   })
   .passthrough();
-export const WorkspaceCheckSchema = z
-  .object({
-    level: OutcomeLevel,
-    // The check outcome (NOT a review verdict): the merge-gate result the CLI computes for the repo.
-    // pass-through (AC-011) → z.string().
-    verdict: z.string(),
-    specs: z.array(WorkspaceSpecCheck),
-    // The change-plan files' check results, same shape as a spec result (checkWorkspace.ts).
-    changePlans: z.array(WorkspaceSpecCheck),
-    workspaceFindings: z.array(WorkspaceFinding),
-  })
-  .passthrough();
-export type WorkspaceCheck = z.infer<typeof WorkspaceCheckSchema>;
+export type RunReview = z.infer<typeof RunReviewSchema>;
 
-// --- suspec review <stem> --json  → ReviewReport (reconcileReview.ts) ------------------------------
-// `kind` is the C012 coverage class; the adapter derives human-attention from `.message`/`.id`, never
-// branches on `kind` → pass-through (AC-011), z.string(). The `message` staying required is the tripwire.
-const CoverageFinding = z
+// --- suspec show checks --json → the checks contract (showArtifact.ts) ------------------------------
+// The one `show` projection the v2 adapter still consumes (the task/spec/review loaders are workspace-
+// tree-bound and cannot reach the store — those tools are retired). `severity` here is pass-through.
+export const ShowChecksSchema = z
   .object({
-    id: z.string(),
-    kind: z.string(),
-    message: z.string(),
+    level: z.literal("clean"),
+    kind: z.literal("checks"),
+    value: z
+      .object({
+        version: z.string(),
+        checks: z.array(
+          z
+            .object({ id: z.string(), name: z.string(), severity: z.string() })
+            .passthrough(),
+        ),
+      })
+      .passthrough(),
   })
   .passthrough();
-// The C013 verify-evidence-binding consistency classes (checksContract.ts `VerifyBindingFinding`).
-// Same as coverage: `kind` is pass-through (AC-011) → z.string().
-const VerifyBindingReport = z
-  .object({
-    id: z.string(),
-    kind: z.string(),
-    message: z.string(),
-  })
-  .passthrough();
-const SelfReport = z
-  .object({
-    claimedNotInDiff: z.array(z.string()),
-    inDiffNotClaimed: z.array(z.string()),
-    outsideScope: z.array(z.string()),
-    // A prose Run summary with no machine-checkable file paths (suspec-cli #44): the inDiffNotClaimed
-    // flood is suppressed and this is surfaced once. Optional for back-compat with an older CLI.
-    runSummaryUnparsed: z.boolean().optional(),
-  })
-  .passthrough();
-const PacketStructural = z
-  .object({
-    badResultCells: z.array(z.string()),
-    badStatus: z.string().nullable(),
-    statusPassContradicted: z.boolean(),
-    missingSections: z.array(z.string()),
-  })
-  .passthrough();
-export const ReviewReportSchema = z
-  .object({
-    level: OutcomeLevel,
-    task: z.string(),
-    diffChangedFiles: z.array(z.string()),
-    // The adapter derives human-attention from `.message` on each of these — a rename/drop trips the wire.
-    coverage: z.array(CoverageFinding),
-    verifyBinding: z.array(VerifyBindingReport),
-    scopeDivergence: z.array(z.string()),
-    selfReport: SelfReport,
-    // Changed files matching a task's `## Do not change` entry (C014, ADR-0086) — distinct from
-    // selfReport.outsideScope; the adapter derives a human-attention item from it.
-    doNotChangeTouched: z.array(z.string()),
-    emptyEvidencePassRows: z.array(z.string()),
-    packetStructural: PacketStructural,
-    hasReviewPacket: z.boolean(),
-  })
-  .passthrough();
-export type ReviewReport = z.infer<typeof ReviewReportSchema>;
-
-// --- suspec show <kind> [ref] --json  → ShowResult (showArtifact.ts) -------------------------------
-// The loader projections suspec-mcp's get_* tools surface. Same drift-tripwire intent as the schemas
-// above: a renamed/dropped field the adapter relies on trips a parse in the contract tests. Each is the
-// uniform `{ level: 'clean', kind, value }` envelope (show never warns; a lookup failure is exit 2).
-const showEnvelope = <T extends z.ZodTypeAny>(kind: string, value: T) =>
-  z
-    .object({ level: z.literal("clean"), kind: z.literal(kind), value })
-    .passthrough();
-
-// suspec show checks → the contract version + the core checks (id/name/severity).
-export const ShowChecksSchema = showEnvelope(
-  "checks",
-  z
-    .object({
-      version: z.string(),
-      checks: z.array(
-        // `severity` is pass-through (AC-011) → z.string().
-        z
-          .object({ id: z.string(), name: z.string(), severity: z.string() })
-          .passthrough(),
-      ),
-    })
-    .passthrough(),
-);
 export type ShowChecks = z.infer<typeof ShowChecksSchema>;
 
-// suspec show task → the task packet's frontmatter + scope/areas + the ADR-0100 cross-root embedded slice.
-export const ShowTaskSchema = showEnvelope(
-  "task",
-  z
-    .object({
-      id: z.string().nullable(),
-      source: z.string().nullable(),
-      status: z.string().nullable(),
-      scope: z.array(z.string()),
-      affectedAreas: z.array(z.string()),
-      doNotChange: z.array(z.string()),
-      claimedChangedFiles: z.array(z.string()),
-      // The embedded `## Spec snapshot` slice — null id + [] for the co-located case (ADR-0100).
-      embeddedSpecId: z.string().nullable(),
-      embeddedRequirements: z.array(
-        z
-          .object({ id: z.string(), verifyCommand: z.string().nullable() })
-          .passthrough(),
-      ),
-    })
-    .passthrough(),
-);
-export type ShowTask = z.infer<typeof ShowTaskSchema>;
+// --- the SAFE-WRITE tier — verdict-free prepare-op reports ------------------------------------------
+// Each scaffold returns a small report the adapter passes through (it surfaces the created artifact's
+// path/id; it branches on none of these). These reports carry NO verdict; the contract pins the fields
+// the adapter relays so a rename/drop trips the wire.
 
-// suspec show spec → frontmatter (incl. the additive living-spec fields), requirements, and the
-// append-only `## Execution` run-record (ADR-0103/0104 — the durable record once tasks are ephemeral).
-export const ShowSpecSchema = showEnvelope(
-  "spec",
-  z
-    .object({
-      frontmatter: z
-        .object({
-          type: z.string(),
-          id: z.string(),
-          status: z.string(),
-          // ADR-0108 living-spec additions; nullable/optional so an older spec without them still parses.
-          supersededBy: z.string().nullable().optional(),
-          snapshot: z.string().nullable().optional(),
-        })
-        .passthrough(),
-      requirements: z.array(
-        z
-          .object({
-            id: z.string(),
-            line: z.number(),
-            verifyCommand: z.string().nullable(),
-          })
-          .passthrough(),
-      ),
-      sectionTitles: z.array(z.string()),
-      openQuestionsPresent: z.boolean(),
-      execution: z.string().nullable(),
-    })
-    .passthrough(),
-);
-export type ShowSpec = z.infer<typeof ShowSpecSchema>;
-
-// suspec show review → the parsed packet PLUS the identity/staleness frontmatter projection: which
-// spec/task it reviews (review-to-spec `spec:`, ADR-0103) and the fast-track pins (ADR-0107).
-export const ShowReviewSchema = showEnvelope(
-  "review",
-  z
-    .object({
-      status: z.string().nullable(),
-      sectionTitles: z.array(z.string()),
-      coverageRows: z.array(
-        z
-          .object({
-            id: z.string(),
-            result: z.string(),
-            evidence: z.string(),
-          })
-          .passthrough(),
-      ),
-      verifyBlocks: z.array(
-        // `result` is pass-through (AC-011) → a nullable string, not a closed enum.
-        z
-          .object({
-            id: z.string().nullable(),
-            cmd: z.string().nullable(),
-            result: z.string().nullable(),
-            malformed: z.boolean(),
-          })
-          .passthrough(),
-      ),
-      frontmatter: z
-        .object({
-          status: z.string().nullable(),
-          spec: z.string().nullable(),
-          task: z.string().nullable(),
-          pr: z.string().nullable(),
-          reviewedSha: z.string().nullable(),
-          evidenceHash: z.string().nullable(),
-        })
-        .passthrough(),
-    })
-    .passthrough(),
-);
-export type ShowReview = z.infer<typeof ShowReviewSchema>;
-
-// --- the SAFE-WRITE tier (AC-009) — verdict-free prepare-op reports ---------------------------------
-// Each new/promote scaffold returns a small report the adapter passes through (it surfaces the created
-// artifact's path/id; it branches on none of these). `level` stays the closed OutcomeLevel (the engine's
-// advisory severity — `new spec` emits `warning` on a duplicate ordinal). These reports carry NO verdict;
-// the contract pins the fields the adapter relays so a rename/drop trips the wire.
-
-// suspec new spec <slug> --json → ScaffoldSpecReport (scaffoldSpec.ts).
-export const ScaffoldSpecSchema = z
+// suspec write spec "<intent>" --json (write.ts) — the ONE spec scaffold, store-rooted. suspec-mcp
+// never passes `--launch`, so `launched` is always false on this path (still pinned: a drop trips).
+export const WriteSpecSchema = z
   .object({
-    level: OutcomeLevel,
-    path: z.string(),
-    specId: z.string(),
-    // Advisory (non-blocking): a duplicate leading `NNN-` ordinal. Optional — absent on the clean case.
-    ordinalClash: z
-      .object({
-        ordinal: z.string(),
-        existingSlug: z.string(),
-        nextFree: z.string(),
-      })
-      .passthrough()
-      .optional(),
+    level: z.string(),
+    spec: z.string(),
+    spec_path: z.string(),
+    created: z.boolean(),
+    launched: z.boolean(),
   })
   .passthrough();
-export type ScaffoldSpec = z.infer<typeof ScaffoldSpecSchema>;
+export type WriteSpec = z.infer<typeof WriteSpecSchema>;
 
-// suspec new task --from <SPEC> [--scope …] --json → CutPacketReport (cutPacket.ts).
-export const CutPacketSchema = z
+// suspec new task --from <SPEC> [--scope …] --json → CutTaskReport (cutTask.ts) — the store task slice.
+export const CutTaskSchema = z
   .object({
-    level: OutcomeLevel,
+    level: z.string(),
     path: z.string(),
     taskId: z.string(),
+    specId: z.string(),
     scope: z.array(z.string()),
+    autoSuffixed: z.boolean(),
   })
   .passthrough();
-export type CutPacket = z.infer<typeof CutPacketSchema>;
-
-// suspec promote <task> --json → ScaffoldFindingReport (scaffoldFinding.ts).
-export const ScaffoldFindingSchema = z
-  .object({
-    level: OutcomeLevel,
-    path: z.string(),
-    slug: z.string(),
-    from: z.string(),
-  })
-  .passthrough();
-export type ScaffoldFinding = z.infer<typeof ScaffoldFindingSchema>;
+export type CutTask = z.infer<typeof CutTaskSchema>;
 
 // The CLI's structured-error stdout body (unixOutcome.ts `emit_error`): `{error, message}` + exit 2.
 export const SuspecErrorSchema = z

@@ -1,10 +1,10 @@
 // The result envelope every tool returns. Two invariants live here (both typed + tested):
 //   1. `noVerdictIssued: true` — a HARD, tested invariant. suspec-mcp relays the CLI's facts and may
 //      DERIVE a triage list, but it never adds a Pass/Fail/approve/merge result of its own.
-//   2. `data` is the CLI's `--json` output VERBATIM — including the CLI's own honest fields (a check's
-//      `level`/`verdict` outcome, the human-recorded board `reviewStatus`). suspec-mcp passes the human's
-//      recorded state through; it does not scrub it and does not adjudicate it.
-// The `derived.humanAttention` list is computed BY suspec-mcp from the real ReviewReport facts, labelled
+//   2. `data` is the CLI's `--json` output VERBATIM — including the CLI's own honest fields (a lint's
+//      advisory `level`, an evidence row's `status`). suspec-mcp passes the CLI's recorded facts
+//      through; it does not scrub them and does not adjudicate them.
+// The `derived.humanAttention` list is computed BY suspec-mcp from the real run-review facts, labelled
 // as derived so no one mistakes it for an engine field (the engine emits facts + an advisory level only).
 // Each item is STRUCTURED `{category, severity, message, ref}` (AC-010) so an agent can act selectively
 // without re-parsing `data`.
@@ -12,25 +12,18 @@
 import { z } from "zod";
 
 import type { SuspecResult } from "./suspec/invoke.ts";
-import { ReviewReportSchema, type ReviewReport } from "./suspec/contract.ts";
+import { RunReviewSchema, type RunReview } from "./suspec/contract.ts";
 
 const NO_VERDICT_NOTE =
-  "suspec-mcp surfaces facts only and issues no verdict. A human or an independent reviewer owns the " +
-  "review result (Pass / Fail / Unverified / Blocked); an empty or weak Evidence cell reads Unverified " +
-  "regardless of a clean reconcile.";
+  "suspec-mcp surfaces facts only and issues no verdict. The human owns the result: `suspec done` is " +
+  "the gate, and an AC without fresh, exit-0, cli-verified evidence reads as a gap regardless of a " +
+  "clean artifact lint.";
 
 // A structured human-attention item (AC-010). `category` keys the fact CLASS the engine surfaced (so an
-// agent can filter to e.g. only coverage gaps); `severity` is advisory triage urgency, NOT a verdict;
-// `ref` is the artifact the item is about (an AC id, a file path) when there is one, else null.
+// agent can filter to e.g. only evidence gaps); `severity` is advisory triage urgency, NOT a verdict;
+// `ref` is the artifact the item is about (an AC id, a store file path) when there is one, else null.
 export type AttentionSeverity = "blocking" | "warning" | "info";
-export type AttentionCategory =
-  | "coverage"
-  | "verify-binding"
-  | "scope-divergence"
-  | "self-report"
-  | "do-not-change"
-  | "empty-evidence"
-  | "packet-structural";
+export type AttentionCategory = "artifact-lint" | "evidence-gap";
 export type AttentionItem = Readonly<{
   category: AttentionCategory;
   severity: AttentionSeverity;
@@ -45,7 +38,7 @@ export type Envelope = Readonly<{
   source: { command: string; exitCode: number };
   data: unknown; // the CLI --json verbatim (detailed), or a concise slice, or the structured CLI error
   derived?: { humanAttention: AttentionItem[]; derivedFrom: string };
-  note?: string; // adapter-level context (e.g. the run is not launchable here)
+  note?: string; // adapter-level context (e.g. the run does not exist in this repo's store)
   responseFormat?: "concise" | "detailed"; // which slice `data` carries (AC-013)
 }>;
 
@@ -54,15 +47,7 @@ export type Envelope = Readonly<{
 // the drift-tripwire schemas in contract.ts). The structured humanAttention shape IS pinned here so a
 // client can rely on `{category, severity, message, ref}` (AC-010).
 const ATTENTION_ITEM_SHAPE = z.object({
-  category: z.enum([
-    "coverage",
-    "verify-binding",
-    "scope-divergence",
-    "self-report",
-    "do-not-change",
-    "empty-evidence",
-    "packet-structural",
-  ]),
+  category: z.enum(["artifact-lint", "evidence-gap"]),
   severity: z.enum(["blocking", "warning", "info"]),
   message: z.string(),
   ref: z.string().nullable(),
@@ -84,112 +69,40 @@ export const ENVELOPE_OUTPUT_SHAPE = {
   responseFormat: z.enum(["concise", "detailed"]).optional(),
 };
 
-// Compute the STRUCTURED triage list from the REAL ReviewReport facts (reconcileReview.ts shape). Every
-// item is a fact the engine surfaced — never a verdict. The advisory `severity` follows the engine's own
-// `report.level` for the blocking-class facts (coverage/verify/scope/do-not-change/empty-evidence/packet)
-// and `info` for the self-report reconcile notes (which are advisory drift signals, never blocking on
-// their own). This is triage urgency, NOT a Pass/Fail.
-function derive_human_attention(report: ReviewReport): AttentionItem[] {
+// Compute the STRUCTURED triage list from the REAL run-review facts (`suspec review <RUN> --json`,
+// review.ts). Every item is a fact the engine surfaced — never a verdict:
+//   • each store-lint diagnostic → `artifact-lint`, severity scaled by the diagnostic's own class
+//     (hard-error → blocking, warning → warning); ref = the store artifact's path.
+//   • each gate gap (an AC short of fresh cli-verified evidence) → `evidence-gap`, warning; ref = the
+//     AC id, message built from the matching evidence row's recorded status. This is triage urgency,
+//     NOT a Pass/Fail — `suspec done` (the human's gate) owns the result.
+function derive_human_attention(report: RunReview): AttentionItem[] {
   const items: AttentionItem[] = [];
-  // The engine's advisory level scales the urgency of the blocking-class facts; a `clean`/`warning` run
-  // still emits these facts but as `warning`, a `blocking` run as `blocking`. Self-report stays `info`.
-  const factSeverity: AttentionSeverity =
-    report.level === "blocking" ? "blocking" : "warning";
-  const push = (
-    category: AttentionCategory,
-    severity: AttentionSeverity,
-    message: string,
-    ref: string | null,
-  ): void => {
-    items.push({ category, severity, message, ref });
-  };
-
-  for (const c of report.coverage) {
-    push("coverage", factSeverity, c.message, c.id);
+  for (const artifact of report.lint) {
+    for (const diag of artifact.diagnostics) {
+      items.push({
+        category: "artifact-lint",
+        severity: diag.severity === "hard-error" ? "blocking" : "warning",
+        message: `${diag.check}: ${diag.message}`,
+        ref: artifact.path,
+      });
+    }
   }
-  for (const v of report.verifyBinding) {
-    // ReviewReportSchema guarantees `message` is a string (no runtime guard needed).
-    push("verify-binding", factSeverity, v.message, v.id);
-  }
-  for (const s of report.scopeDivergence) {
-    push("scope-divergence", factSeverity, `scope divergence: ${s}`, s);
-  }
-  for (const f of report.selfReport.claimedNotInDiff) {
-    push(
-      "self-report",
-      "info",
-      `claimed in the run summary but not in the diff: ${f}`,
-      f,
-    );
-  }
-  for (const f of report.selfReport.inDiffNotClaimed) {
-    push("self-report", "info", `changed in the diff but not claimed: ${f}`, f);
-  }
-  if (report.selfReport.runSummaryUnparsed === true) {
-    push(
-      "self-report",
-      "info",
-      "run summary lists no machine-checkable file paths — selfReport reconcile skipped (list changed files as backticked paths to enable it)",
-      null,
-    );
-  }
-  for (const f of report.selfReport.outsideScope) {
-    push(
-      "scope-divergence",
-      factSeverity,
-      `changed outside the task's affected areas: ${f}`,
-      f,
-    );
-  }
-  for (const f of report.doNotChangeTouched) {
-    push(
-      "do-not-change",
-      factSeverity,
-      `changed but the task lists it under Do not change: ${f}`,
-      f,
-    );
-  }
-  for (const r of report.emptyEvidencePassRows) {
-    push(
-      "empty-evidence",
-      factSeverity,
-      `${r}: Pass row with empty Evidence — reads Unverified`,
-      r,
-    );
-  }
-  const ps = report.packetStructural;
-  for (const cell of ps.badResultCells) {
-    push("packet-structural", factSeverity, `invalid Result cell: ${cell}`, cell);
-  }
-  if (ps.badStatus !== null) {
-    push(
-      "packet-structural",
-      factSeverity,
-      `invalid review status: ${ps.badStatus}`,
-      ps.badStatus,
-    );
-  }
-  if (ps.statusPassContradicted) {
-    push(
-      "packet-structural",
-      factSeverity,
-      "frontmatter says status: pass, but the coverage rows are not all Pass",
-      null,
-    );
-  }
-  for (const section of ps.missingSections) {
-    push(
-      "packet-structural",
-      factSeverity,
-      `missing required review section: ${section}`,
-      section,
-    );
+  for (const ac of report.gaps) {
+    const row = report.evidence.find((r) => r.ac === ac);
+    const status = row?.status ?? "missing";
+    items.push({
+      category: "evidence-gap",
+      severity: "warning",
+      message: `${ac}: no fresh cli-verified evidence (${status}) — capture with \`suspec evidence add ${report.runSlug} --ac ${ac} -- <command>\``,
+      ref: ac,
+    });
   }
   return items;
 }
 
 // Build an envelope from a successful or structured-error CLI result. `kind: 'review'` additionally
-// derives the human-attention list (and surfaces the not-runnable-here case structurally). A
+// derives the human-attention list (and surfaces the no-such-run case structurally). A
 // launch-error never reaches here — `respond()` turns it into a tool error.
 //
 // `format` selects the slice `data` carries (AC-013). `slice` (when given for a read tool) maps the
@@ -213,17 +126,19 @@ export function build_envelope(
   };
 
   if (result.kind === "structured-error") {
-    // A structured CLI error is a FACT for the agent, not an adapter failure. Only the no-worktree
-    // case gets the "launch the run first" hint — every other cause (task not found, source spec
-    // unresolvable, parse failure, diff failure) must surface its OWN message, never be mislabelled.
-    const isNoWorktree =
-      kind === "review" && /no worktree/i.test(result.error.message);
+    // A structured CLI error is a FACT for the agent, not an adapter failure. Only the no-run/no-store
+    // case gets the "runs appear after `suspec work`" hint — every other cause (usage, lint hard-error,
+    // parse failure) must surface its OWN message, never be mislabelled.
+    const isNoRun =
+      kind === "review" &&
+      (result.error.error === "store_run_not_found" ||
+        /no store for this repo/i.test(result.error.message));
     return {
       ...base,
       ok: false,
       data: result.error,
-      note: isNoWorktree
-        ? "The task has no live run to reconcile here (no worktree). Launch the run first, then retry."
+      note: isNoRun
+        ? "No such run in this repo's store. A run record appears after `suspec work <SPEC>`; list the store runs via suspec_get_status and retry with a run slug."
         : result.error.message,
     };
   }
@@ -236,7 +151,7 @@ export function build_envelope(
       : result.data;
 
   if (kind === "review") {
-    const parsed = ReviewReportSchema.safeParse(result.data);
+    const parsed = RunReviewSchema.safeParse(result.data);
     if (parsed.success) {
       return {
         ...base,
@@ -244,7 +159,7 @@ export function build_envelope(
         data: projected,
         derived: {
           humanAttention: derive_human_attention(parsed.data),
-          derivedFrom: "ReviewReport facts",
+          derivedFrom: "store run-review facts (`suspec review <RUN>`)",
         },
       };
     }
@@ -253,7 +168,7 @@ export function build_envelope(
       ...base,
       ok: true,
       data: result.data,
-      note: "reconcile output did not match the expected ReviewReport shape — human-attention not derived",
+      note: "review output did not match the expected run-review shape — human-attention not derived",
     };
   }
 

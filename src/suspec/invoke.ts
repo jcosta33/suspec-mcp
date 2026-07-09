@@ -13,22 +13,25 @@ export type SuspecEnv = Readonly<{
   cwd: string; // the workspace root — every invocation runs here (root-confinement, defense in depth)
 }>;
 
-// The verbs suspec-mcp may invoke. The read/reconcile set (status/check/review/show) plus the verdict-free
-// SAFE-WRITE prepare ops (new/promote, AC-009 / ADR-0077 D8): each scaffolds an artifact (a spec, a task,
-// a candidate finding) — never a board, a result, or a verdict.
+// The verbs suspec-mcp may invoke (the v2 store surface, ADR-0137). The read/reconcile set
+// (status/check/review/show/store) plus the verdict-free SAFE-WRITE prepare ops (`write spec` /
+// `new task`): each scaffolds ONE store artifact — never a result or a verdict. NOTABLY ABSENT:
+// `promote` (opens a GitHub issue + archives the finding — network + mutation, not a scaffold),
+// `work` / `fix` / `done` / `evidence` (launch runners, close gates, or execute commands).
 const ALLOWED_VERBS = new Set([
   "status",
   "check",
   "review",
   "show",
+  "store",
   "new",
-  "promote",
+  "write",
 ]);
 
-// The ONLY non-`--json` flags suspec-mcp may pass — the verdict-free flags the read + safe-write tiers
-// need. NOTABLY ABSENT: `--write` / `--force` / `--agent` (every mutation/verdict flag) — so a safe-write
-// op can only SCAFFOLD a fresh artifact, never overwrite or mutate one.
-const ALLOWED_FLAGS = new Set(["--base", "--from", "--scope"]);
+// The ONLY non-`--json` flags suspec-mcp may pass — the verdict-free flags the safe-write tier
+// needs. NOTABLY ABSENT: `--write` / `--force` / `--agent` / `--launch` (every mutation/dispatch
+// flag) — so a safe-write op can only SCAFFOLD a fresh artifact, never overwrite, mutate, or launch.
+const ALLOWED_FLAGS = new Set(["--from", "--scope"]);
 
 export type SuspecInvocation = Readonly<{
   command: string; // the human-readable command line, for the envelope's provenance
@@ -67,7 +70,7 @@ export function invoke_suspec(
   env: SuspecEnv,
   verb: string,
   positional: readonly string[] = [],
-  opts: { base?: string; flags?: Readonly<Record<string, string>> } = {},
+  opts: { flags?: Readonly<Record<string, string>> } = {},
 ): SuspecResult {
   if (!ALLOWED_VERBS.has(verb)) {
     // Defense in depth — the tools only ever pass allow-listed verbs; this catches a programming slip.
@@ -76,7 +79,7 @@ export function invoke_suspec(
     );
   }
   const args = [verb, ...positional];
-  // The verdict-free flags the read + safe-write tiers need (`--from`/`--scope` for `new task`), each
+  // The verdict-free flags the safe-write tier needs (`--from`/`--scope` for `new task`), each
   // value already validated by the caller. The flag NAME is allow-list-checked here as defense in depth —
   // a programming slip that tried to pass `--write` would throw, never silently mutate.
   for (const [flag, value] of Object.entries(opts.flags ?? {})) {
@@ -86,9 +89,6 @@ export function invoke_suspec(
       );
     }
     args.push(flag, value);
-  }
-  if (typeof opts.base === "string" && opts.base.length > 0) {
-    args.push("--base", opts.base);
   }
   args.push("--json");
   const command = `suspec ${args.join(" ")}`;

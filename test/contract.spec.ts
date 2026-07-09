@@ -5,22 +5,19 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  DerivedBoardSchema,
-  WorkspaceCheckSchema,
+  StoreStatusSchema,
+  StoreListSchema,
+  StoreLintSchema,
   FileCheckSchema,
-  ReviewReportSchema,
+  RunReviewSchema,
   ShowChecksSchema,
-  ShowTaskSchema,
-  ShowSpecSchema,
-  ShowReviewSchema,
-  ScaffoldSpecSchema,
-  CutPacketSchema,
-  ScaffoldFindingSchema,
+  WriteSpecSchema,
+  CutTaskSchema,
   SuspecErrorSchema,
 } from "../src/suspec/contract.ts";
 
 // The DRIFT TRIPWIRE has two halves that together pin stub → contract → reality:
-//   (1) the captured fixtures were recorded from the REAL `suspec … --json` (the private workspace —
+//   (1) the captured fixtures were recorded from the REAL `suspec … --json` (a scratch repo + store —
 //       note the absolute paths). Parsing them proves the CONTRACT matches reality; a suspec-cli rename
 //       or dropped field fails the parse here instead of the adapter silently producing wrong output.
 //   (2) the test STUB (the binary the integration tests run against) is parsed through the SAME schemas,
@@ -36,57 +33,31 @@ const runStub = (args: string[]): unknown =>
   );
 
 describe("the contract matches the real --json shapes (captured fixtures)", () => {
-  it("status --json → DerivedBoard (incl. tasksWithoutReview / needsHuman)", () => {
-    const parsed = DerivedBoardSchema.safeParse(fixture("status.json"));
+  it("status --json → StoreStatus (active/archived listings + the `next` ranking)", () => {
+    const parsed = StoreStatusSchema.safeParse(fixture("status.json"));
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect(parsed.data.specs.length).toBeGreaterThan(0);
-      expect(Array.isArray(parsed.data.tasksWithoutReview)).toBe(true);
-      expect(Array.isArray(parsed.data.needsHuman)).toBe(true);
+      expect(parsed.data.active.length).toBeGreaterThan(0);
+      expect(Array.isArray(parsed.data.archived)).toBe(true);
+      expect(parsed.data.next.length).toBeGreaterThan(0);
     }
   });
 
-  it("check --json (workspace) → WorkspaceCheck (incl. verdict / changePlans / workspaceFindings)", () => {
-    const parsed = WorkspaceCheckSchema.safeParse(
-      fixture("check-workspace.json"),
-    );
+  it("store list --json → StoreList (store path + counts + listings)", () => {
+    const parsed = StoreListSchema.safeParse(fixture("store-list.json"));
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect(parsed.data.verdict).toBeDefined();
-      expect(Array.isArray(parsed.data.changePlans)).toBe(true);
-      expect(Array.isArray(parsed.data.workspaceFindings)).toBe(true);
+      expect(parsed.data.store.length).toBeGreaterThan(0);
+      expect(parsed.data.active_count).toBe(parsed.data.active.length);
     }
   });
 
-  it("WorkspaceFinding.code is PASS-THROUGH: a benign new CLI advisory code does NOT trip the wire (AC-011/F7)", () => {
-    const withFinding = (code: string) => ({
-      level: "warning",
-      verdict: "clean",
-      specs: [],
-      changePlans: [],
-      workspaceFindings: [{ code, message: "x" }],
-    });
-    // An existing advisory code parses (unchanged behaviour for the consumer).
-    expect(
-      WorkspaceCheckSchema.safeParse(withFinding("incomplete-execution-digest"))
-        .success,
-    ).toBe(true);
-    // AC-011: the adapter only PASSES `code` through (it surfaces the message, never branches on the
-    // code), so a new CLI advisory code is a benign additive change that must NOT convert into a
-    // suspec-mcp break — it parses, where the old closed enum would have tripped.
-    expect(
-      WorkspaceCheckSchema.safeParse(withFinding("totally-new-code")).success,
-    ).toBe(true);
-    // The tripwire that DOES still fire: the adapter reads `message`, so dropping it trips the wire.
-    expect(
-      WorkspaceCheckSchema.safeParse({
-        level: "warning",
-        verdict: "clean",
-        specs: [],
-        changePlans: [],
-        workspaceFindings: [{ code: "C002" /* message dropped */ }],
-      }).success,
-    ).toBe(false);
+  it("check --json (no args, the store lint) → StoreLint", () => {
+    const parsed = StoreLintSchema.safeParse(fixture("check-store.json"));
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.artifacts.length).toBeGreaterThan(0);
+    }
   });
 
   it("check <file> --json → FileCheck", () => {
@@ -95,9 +66,16 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     );
   });
 
-  it("review --json → ReviewReport (the consumed shape)", () => {
-    const parsed = ReviewReportSchema.safeParse(fixture("review-report.json"));
+  it("review <RUN> --json → RunReview (lint + evidence rows + gaps — the consumed shape)", () => {
+    const parsed = RunReviewSchema.safeParse(fixture("review-report.json"));
     expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      // the real capture carries a verified row AND a missing row (a genuine gate gap)
+      const statuses = parsed.data.evidence.map((r) => r.status);
+      expect(statuses).toContain("verified");
+      expect(statuses).toContain("missing");
+      expect(parsed.data.gaps).toContain("AC-002");
+    }
   });
 
   it("show checks --json → ShowChecks", () => {
@@ -106,128 +84,97 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     );
   });
 
-  it("show task --json → ShowTask (incl. the cross-root embedded slice fields)", () => {
-    const parsed = ShowTaskSchema.safeParse(fixture("show-task.json"));
-    expect(parsed.success).toBe(true);
-    if (parsed.success) {
-      expect("embeddedSpecId" in parsed.data.value).toBe(true);
-      expect(Array.isArray(parsed.data.value.embeddedRequirements)).toBe(true);
+  it("the SAFE-WRITE tier reports parse: write spec / new task --from", () => {
+    const spec = WriteSpecSchema.safeParse(fixture("write-spec.json"));
+    expect(spec.success).toBe(true);
+    if (spec.success) {
+      // the report relays the artifact identity the adapter surfaces — never a verdict; and the
+      // adapter never passes --launch, so the captured scaffold is undispatched.
+      expect(spec.data.spec).toMatch(/^SPEC-/);
+      expect(spec.data.launched).toBe(false);
     }
-  });
-
-  it("show spec --json → ShowSpec (incl. the `## Execution` run-record field)", () => {
-    const parsed = ShowSpecSchema.safeParse(fixture("show-spec.json"));
-    expect(parsed.success).toBe(true);
-    if (parsed.success) {
-      expect("execution" in parsed.data.value).toBe(true);
-    }
-  });
-
-  it("show review --json → ShowReview (incl. the identity/staleness frontmatter)", () => {
-    const parsed = ShowReviewSchema.safeParse(fixture("show-review.json"));
-    expect(parsed.success).toBe(true);
-    if (parsed.success) {
-      expect("reviewedSha" in parsed.data.value.frontmatter).toBe(true);
-      expect("evidenceHash" in parsed.data.value.frontmatter).toBe(true);
-    }
-  });
-
-  it("the show tripwire FAILS if review frontmatter drops a staleness pin (evidenceHash)", () => {
-    const drifted = JSON.parse(
-      readFileSync(join(here, "fixtures", "show-review.json"), "utf8"),
-    );
-    delete drifted.value.frontmatter.evidenceHash;
-    expect(ShowReviewSchema.safeParse(drifted).success).toBe(false);
-  });
-
-  it("the SAFE-WRITE tier reports parse (AC-009): new spec / new task --from / promote", () => {
-    expect(ScaffoldSpecSchema.safeParse(fixture("new-spec.json")).success).toBe(
-      true,
-    );
-    expect(CutPacketSchema.safeParse(fixture("new-task.json")).success).toBe(
-      true,
-    );
-    const promote = ScaffoldFindingSchema.safeParse(fixture("promote.json"));
-    expect(promote.success).toBe(true);
-    if (promote.success) {
-      // the report relays the artifact identity the adapter surfaces (path/slug/from) — never a verdict.
-      expect(promote.data.slug.length).toBeGreaterThan(0);
-      expect(promote.data.from.length).toBeGreaterThan(0);
+    const task = CutTaskSchema.safeParse(fixture("new-task.json"));
+    expect(task.success).toBe(true);
+    if (task.success) {
+      expect(task.data.taskId).toMatch(/^TASK-/);
+      expect(task.data.specId).toMatch(/^SPEC-/);
     }
   });
 
   it("the structured error body parses", () => {
     expect(
       SuspecErrorSchema.safeParse({
-        error: "Usage",
-        message: "no worktree found",
+        error: "store_run_not_found",
+        message: "no run x in the store",
       }).success,
     ).toBe(true);
   });
 
-  it("a board task with reviewStatus:null parses (the unreviewed-task case)", () => {
-    const board = {
-      level: "clean",
-      specs: [
-        {
-          id: "S",
-          status: "ready",
-          tasks: [
-            { id: "T", status: "ready", hasReview: false, reviewStatus: null },
-          ],
-        },
-      ],
-      tasksWithoutReview: ["T"],
-      needsHuman: [],
-    };
-    expect(DerivedBoardSchema.safeParse(board).success).toBe(true);
-  });
-
-  it("the tripwire FAILS if a consumed field is renamed/dropped (verifyBinding.message)", () => {
-    const drifted = JSON.parse(
-      readFileSync(join(here, "fixtures", "review-report.json"), "utf8"),
-    );
-    drifted.verifyBinding = [
-      { id: "AC-001", kind: "cmd-mismatch" /* message dropped */ },
-    ];
-    expect(ReviewReportSchema.safeParse(drifted).success).toBe(false);
-  });
-
-  it("a new coverage `kind` is PASS-THROUGH and does NOT trip the wire (AC-011); the consumed `message` still does", () => {
+  it("an evidence-row `status` is PASS-THROUGH: a new CLI status value does NOT trip the wire (AC-011)", () => {
     const base = JSON.parse(
       readFileSync(join(here, "fixtures", "review-report.json"), "utf8"),
     );
-    // AC-011: the adapter derives human-attention from `.message`/`.id` and never branches on `kind`, so
-    // a new CLI coverage kind is a benign additive change that must NOT break suspec-mcp (it parses).
-    const newKind = { ...base };
-    newKind.coverage = [{ id: "AC-001", kind: "something-new", message: "x" }];
-    expect(ReviewReportSchema.safeParse(newKind).success).toBe(true);
-    // The tripwire that DOES still fire: dropping `message` (which the adapter reads) trips the wire.
-    const droppedMessage = { ...base };
-    droppedMessage.coverage = [{ id: "AC-001", kind: "uncovered" }];
-    expect(ReviewReportSchema.safeParse(droppedMessage).success).toBe(false);
+    // AC-011: the adapter derives human-attention from `gaps` + diagnostics, never branching on an
+    // evidence row's status — a new CLI status class is a benign additive change that must parse.
+    base.evidence[0].status = "verified-agent-with-a-new-label";
+    expect(RunReviewSchema.safeParse(base).success).toBe(true);
   });
 
-  it("the tripwire FAILS if a required top-level list is dropped (status.tasksWithoutReview)", () => {
+  it("the tripwire FAILS if a consumed field is renamed/dropped (a lint diagnostic's message)", () => {
     const drifted = JSON.parse(
+      readFileSync(join(here, "fixtures", "review-report.json"), "utf8"),
+    );
+    drifted.lint = [
+      {
+        path: "spec-x.md",
+        diagnostics: [{ check: "C007", severity: "hard-error" /* message dropped */ }],
+      },
+    ];
+    expect(RunReviewSchema.safeParse(drifted).success).toBe(false);
+  });
+
+  it("the tripwire FAILS on a lint severity outside the branched value-set (the one closed enum)", () => {
+    // The adapter BRANCHES on `severity === "hard-error"` (envelope.ts), so a new severity class the
+    // adapter cannot interpret must trip the wire, per the enum policy.
+    const drifted = JSON.parse(
+      readFileSync(join(here, "fixtures", "review-report.json"), "utf8"),
+    );
+    drifted.lint = [
+      {
+        path: "spec-x.md",
+        diagnostics: [{ check: "C007", severity: "catastrophic", message: "x" }],
+      },
+    ];
+    expect(RunReviewSchema.safeParse(drifted).success).toBe(false);
+  });
+
+  it("the tripwire FAILS if a required top-level list is dropped (review.gaps / status.next)", () => {
+    const review = JSON.parse(
+      readFileSync(join(here, "fixtures", "review-report.json"), "utf8"),
+    );
+    delete review.gaps;
+    expect(RunReviewSchema.safeParse(review).success).toBe(false);
+    const status = JSON.parse(
       readFileSync(join(here, "fixtures", "status.json"), "utf8"),
     );
-    delete drifted.tasksWithoutReview;
-    expect(DerivedBoardSchema.safeParse(drifted).success).toBe(false);
+    delete status.next;
+    expect(StoreStatusSchema.safeParse(status).success).toBe(false);
   });
 });
 
 describe("the test stub conforms to the SAME contract as the real captured output", () => {
-  it("stub status output parses against DerivedBoardSchema", () => {
-    expect(DerivedBoardSchema.safeParse(runStub(["status"])).success).toBe(
-      true,
-    );
+  it("stub status output parses against StoreStatusSchema", () => {
+    expect(StoreStatusSchema.safeParse(runStub(["status"])).success).toBe(true);
   });
 
-  it("stub check (workspace) output parses against WorkspaceCheckSchema", () => {
-    expect(WorkspaceCheckSchema.safeParse(runStub(["check"])).success).toBe(
-      true,
-    );
+  it("stub store list output parses against StoreListSchema", () => {
+    expect(
+      StoreListSchema.safeParse(runStub(["store", "list"])).success,
+    ).toBe(true);
+  });
+
+  it("stub check (store lint) output parses against StoreLintSchema", () => {
+    expect(StoreLintSchema.safeParse(runStub(["check"])).success).toBe(true);
   });
 
   it("stub check <file> output parses against FileCheckSchema", () => {
@@ -236,27 +183,30 @@ describe("the test stub conforms to the SAME contract as the real captured outpu
     ).toBe(true);
   });
 
-  it("stub review output parses against ReviewReportSchema, and its coverage wording matches the real capture", () => {
-    const stub = ReviewReportSchema.parse(runStub(["review", "feat"]));
-    const real = ReviewReportSchema.parse(fixture("review-report.json"));
-    // The schema cannot see message WORDING (it is just a string), so pin it directly: the stub's
-    // coverage message must carry the same `(uncovered)` kind suffix the real CLI single-sources.
-    expect(stub.coverage[0].message).toMatch(/\(uncovered\)$/);
-    expect(real.coverage[0].message).toMatch(/\(uncovered\)$/);
+  it("stub review output parses against RunReviewSchema, and carries the same gap shape as the real capture", () => {
+    const stub = RunReviewSchema.parse(runStub(["review", "feat"]));
+    const real = RunReviewSchema.parse(fixture("review-report.json"));
+    // The schema cannot see list SEMANTICS, so pin them directly: both surface at least one gap whose
+    // AC id also appears as a `missing` evidence row (the done-gate preview the adapter derives from).
+    for (const report of [stub, real]) {
+      expect(report.gaps.length).toBeGreaterThan(0);
+      const gapped = report.evidence.find((r) => r.ac === report.gaps[0]);
+      expect(gapped?.status).toBe("missing");
+    }
   });
 
-  it("stub show checks/task/spec/review output parses against the Show schemas", () => {
+  it("stub show checks / write spec / new task outputs parse against their schemas", () => {
     expect(ShowChecksSchema.safeParse(runStub(["show", "checks"])).success).toBe(
       true,
     );
     expect(
-      ShowTaskSchema.safeParse(runStub(["show", "task", "feat"])).success,
+      WriteSpecSchema.safeParse(runStub(["write", "spec", "demo feature"]))
+        .success,
     ).toBe(true);
     expect(
-      ShowSpecSchema.safeParse(runStub(["show", "spec", "SPEC-feat"])).success,
-    ).toBe(true);
-    expect(
-      ShowReviewSchema.safeParse(runStub(["show", "review", "feat"])).success,
+      CutTaskSchema.safeParse(
+        runStub(["new", "task", "--from", "SPEC-x", "--scope", "AC-001"]),
+      ).success,
     ).toBe(true);
   });
 });

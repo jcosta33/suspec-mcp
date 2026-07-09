@@ -1,14 +1,23 @@
-// The Suspec MCP tool surface. Three tiers, all routed through the no-verdict envelope:
-//   • READ — status / list / check / show-loader projections over the CLI's read `--json` (status, check,
-//     show). Each declares an outputSchema and takes a `response_format` (concise|detailed, AC-013):
+// The Suspec MCP tool surface — the v2 STORE surface (ADR-0137: artifacts are the agent's transient
+// working memory in `~/.claude/state/<repo>/`, never repo files; no board, no workspace tree, no
+// verdicts). Three tiers, all routed through the no-verdict envelope:
+//   • READ — store projections over the CLI's read `--json` (status, store list, check, show checks).
+//     Each declares an outputSchema and takes a `response_format` (concise|detailed, AC-013):
 //     concise returns the relevant slice, detailed the verbatim payload.
-//   • RECONCILE — the single `suspec_reconcile` (AC-007): one engine (`suspec review`), one tool. The
-//     scan-vs-reconcile distinction is data-driven (`report.hasReviewPacket`), not two tools; the
-//     implementer-vs-reviewer STANCE split lives in the prompts (prompts.ts), not here.
-//   • SAFE-WRITE — the verdict-free prepare tier (AC-009 / ADR-0077 D8): scaffold_spec / split_task /
-//     scaffold_finding back the CLI's `new spec` / `new task --from` / `promote`. Each SCAFFOLDS a fresh
-//     artifact; it is annotated non-verdict and read-adjacent (it creates an artifact, never adjudicates
-//     one). See register_safe_write_tools for the full guarantee.
+//   • RECONCILE — the single `suspec_reconcile`: one engine (`suspec review <RUN>`), one tool. It
+//     previews exactly what `suspec done` will gate on (artifact lint + evidence-vs-AC rows) without
+//     closing anything; the implementer-vs-reviewer STANCE split lives in the prompts (prompts.ts).
+//   • SAFE-WRITE — the verdict-free prepare tier (ADR-0084: prepare verbs re-aimed at the store):
+//     scaffold_spec / split_task back the CLI's `write spec` / `new task --from`. Each SCAFFOLDS a
+//     fresh STORE artifact; it is annotated non-verdict and read-adjacent (it creates an artifact,
+//     never adjudicates one). See register_safe_write_tools for the full guarantee.
+//
+// Retired with the v2 pivot (no CLI counterpart): suspec_check_workspace (the workspace verdict is
+// gone — `check` with no args is now the store lint, served by suspec_check_store),
+// suspec_get_task/get_spec/get_review (the `show` loaders are workspace-tree-bound and cannot reach
+// the store; agents read store artifacts directly by absolute path per ADR-0137 D2), and
+// suspec_scaffold_finding (`promote` now opens a GitHub issue and archives the finding — a network
+// mutation, not a scaffold; findings enter via runs and promote via the CLI).
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -17,19 +26,15 @@ import { type SuspecEnv, invoke_suspec } from "./suspec/invoke.ts";
 import {
   confine_path,
   is_safe_segment,
-  is_safe_base,
-  task_stem,
+  is_safe_intent,
 } from "./roots.ts";
 import { respond, tool_error, ENVELOPE_OUTPUT_SHAPE } from "./envelope.ts";
 import {
   slice_status,
+  slice_store_list,
+  slice_store_lint,
   slice_file_check,
-  slice_workspace_check,
-  slice_show_task,
-  slice_show_spec,
-  slice_show_review,
   slice_show_checks,
-  list_from_board,
 } from "./slices.ts";
 
 export type Ctx = Readonly<{ env: SuspecEnv; root: string }>;
@@ -41,9 +46,10 @@ const READ_ONLY = {
   openWorldHint: false,
 };
 
-// The SAFE-WRITE tier's annotation: NOT read-only (it scaffolds a file) but explicitly NON-destructive
-// (it never overwrites — no `--force`) and NON-idempotent (a second call would no-clobber-fail). The
-// title/description carry the verdict-free contract; these hints carry the write-but-safe shape.
+// The SAFE-WRITE tier's annotation: NOT read-only (it scaffolds a store file) but explicitly
+// NON-destructive (it never overwrites — no `--force`, no `--launch`) and NON-idempotent (a second
+// `new task` call would no-clobber-fail; `write spec` reuses the existing spec). The title/description
+// carry the verdict-free contract; these hints carry the write-but-safe shape.
 const SAFE_WRITE = {
   readOnlyHint: false,
   destructiveHint: false,
@@ -71,12 +77,13 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
   server.registerTool(
     "suspec_get_status",
     {
-      title: "Suspec workspace board",
+      title: "Suspec store summary",
       description:
-        `The derived workspace board — specs, their tasks, and review status, for the ONE workspace ` +
-        `this server instance is bound to (${ctx.root}); switching workspaces means restarting the ` +
-        `server with a different --workspace. Read-only; no verdict. ` +
-        `concise returns spec/task ids + review status + the triage lists; detailed the full board.`,
+        `The store summary for the ONE repo this server instance is bound to (${ctx.root}): the active ` +
+        `and archived store artifacts (specs, runs, reviews, findings, intakes) with their ages, plus ` +
+        `the \`next\` attention ranking (live runs, gate gaps, triage debt, ready specs). Read-only; no ` +
+        `verdict; switching repos means restarting the server with a different --workspace. concise ` +
+        `drops the archived listing; detailed returns everything.`,
       inputSchema: { ...responseFormatInput },
       outputSchema: ENVELOPE_OUTPUT_SHAPE,
       annotations: READ_ONLY,
@@ -90,42 +97,41 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
     },
   );
 
-  // Enumeration (AC-012): an agent without an id can list specs / tasks. There is no `suspec list` verb;
-  // the board (`suspec status --json`) IS the enumeration source, so `suspec_list` projects it through a
-  // `kind` filter. specs → the spec ids + status; tasks → every task across all specs + its review status.
+  // Enumeration: an agent without a slug can list the store's artifacts. `suspec store list` is the
+  // enumeration source (active + archived, each with kind + age); run slugs come from `run-<slug>.md`
+  // filenames, spec ids from `spec-<slug>.md`.
   server.registerTool(
     "suspec_list",
     {
-      title: "List specs or tasks",
+      title: "List the store's artifacts",
       description:
-        "Enumerate the workspace's specs or tasks (so an agent without an id can find one) — projected " +
-        "from the board. `kind: specs` returns spec ids + status; `kind: tasks` returns task ids + their " +
-        "spec + review status. Read-only; no verdict.",
-      inputSchema: {
-        kind: z
-          .enum(["specs", "tasks"])
-          .describe("which artifacts to enumerate"),
-        ...responseFormatInput,
-      },
+        "Enumerate the repo's store artifacts (so an agent without a slug can find one) via `suspec " +
+        "store list`: active + archived, each with filename, kind (spec/run/review/finding/intake), and " +
+        "age in days. A run slug is the `run-<slug>.md` filename stem. Read-only; no verdict.",
+      inputSchema: { ...responseFormatInput },
       outputSchema: ENVELOPE_OUTPUT_SHAPE,
       annotations: READ_ONLY,
     },
-    ({ kind, response_format }) => {
+    ({ response_format }) => {
       const format = resolve_format(response_format);
-      return respond(invoke_suspec(ctx.env, "status"), "plain", {
+      return respond(invoke_suspec(ctx.env, "store", ["list"]), "plain", {
         format,
-        slice: (data) => list_from_board(data, kind),
+        slice: slice_store_list,
       });
     },
   );
 
+  // The store lint (replaces the retired suspec_check_workspace — there is no workspace tree and no
+  // workspace verdict in v2; `suspec check` with no args lints the STORE's artifacts for this repo).
   server.registerTool(
-    "suspec_check_workspace",
+    "suspec_check_store",
     {
-      title: "Check the whole workspace",
+      title: "Lint the store's artifacts",
       description:
-        "Run the Suspec checks contract over every spec + change plan. Returns diagnostics, never a " +
-        "verdict. concise returns only the artifacts that carry a diagnostic; detailed every result.",
+        "Run the checks contract over the repo's STORE artifacts via `suspec check` (no file): every " +
+        "run record, its driving spec, review packets, and evidence records (a forged cli-verified " +
+        "claim is a hard error). Returns diagnostics, never a verdict. concise returns only the " +
+        "artifacts that carry a diagnostic; detailed every result.",
       inputSchema: { ...responseFormatInput },
       outputSchema: ENVELOPE_OUTPUT_SHAPE,
       annotations: READ_ONLY,
@@ -134,30 +140,23 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
       const format = resolve_format(response_format);
       return respond(invoke_suspec(ctx.env, "check"), "plain", {
         format,
-        slice: slice_workspace_check,
+        slice: slice_store_lint,
       });
     },
   );
 
-  // check_file is the ONE file-check path (AC-008): the former `validate_review_packet` was a thin alias
-  // of this same `suspec check <file>` verb (a strict subset of reconcile), so it is dropped. A review
-  // packet IS a valid input here — `suspec check` runs the review-file checks (C012 coverage, C013
-  // verify-evidence) on it — but a clean result is NOT a full packet validation: the diff-aware facts
-  // (out-of-scope, self-report, empty-evidence) come only from suspec_reconcile when a worktree exists.
   server.registerTool(
     "suspec_check_file",
     {
       title: "Check one artifact file (spec, review, or change-plan)",
       description:
-        "Run the Suspec checks contract over one file via `suspec check`. Accepts a spec, a change-plan, " +
-        "or a REVIEW packet (it runs the review-file checks C012/C013 on a review — a clean result here is " +
-        "NOT full validation; the diff-aware facts come from suspec_reconcile). Do NOT pass a TASK packet: " +
-        "`suspec check` would lint it as a spec and emit spurious warnings — use suspec_reconcile to " +
-        "reconcile a task or suspec_get_task to read it. Returns diagnostics, never a verdict.",
+        "Run the Suspec checks contract over one file via `suspec check <file>`. Dispatches on the " +
+        "file's frontmatter type: a spec runs the core spec checks, a review packet the C012/C013 " +
+        "review checks, a change-plan the C010/C011 checks. The path is confined to the repo root this " +
+        "server is bound to; store artifacts are linted via suspec_check_store instead. Returns " +
+        "diagnostics, never a verdict.",
       inputSchema: {
-        path: z
-          .string()
-          .describe("workspace-relative path to the artifact file"),
+        path: z.string().describe("repo-relative path to the artifact file"),
         ...responseFormatInput,
       },
       outputSchema: ENVELOPE_OUTPUT_SHAPE,
@@ -178,168 +177,14 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
     },
   );
 
-  // --- RECONCILE tier ------------------------------------------------------------------------------
-  // The single positional (see the module header for why scan-vs-reconcile is data, not two tools)
-  // is EITHER a task (`suspec review` resolves it to a task, keys coverage on the task scope, diffs the
-  // worktree) OR a spec (the task-less 1:1 review-to-spec case, ADR-0103 — coverage on the spec's full
-  // ACs, self-report from its `## Execution`). The CLI dispatches off the arg; the adapter must NOT
-  // `task_stem` a spec id (that lowercases `SPEC-x` and breaks resolution), so a `spec` is validated +
-  // passed verbatim while a `task` is normalized to its `tasks/<stem>.md` stem.
-  server.registerTool(
-    "suspec_reconcile",
-    {
-      title: "Reconcile a run vs its spec/task and the diff (no verdict)",
-      description:
-        "Reconcile a task (or a spec, the task-less 1:1 review-to-spec case) " +
-        "against its spec and the worktree diff: coverage gaps, out-of-scope changes, empty-evidence Pass " +
-        "rows, and self-report mismatches as facts + a structured human-attention list. This is the SAME " +
-        "engine whether or not a review packet exists yet (the report carries hasReviewPacket — no separate " +
-        "scan). Never issues a verdict — a human or an independent reviewer owns the result. If there is no " +
-        'live worktree, returns a structured "not runnable here" result, not an error.',
-      inputSchema: {
-        task: z
-          .string()
-          .optional()
-          .describe("task id or stem (the CLI reviews `tasks/<stem>.md`)"),
-        spec: z
-          .string()
-          .optional()
-          .describe(
-            "spec id/slug for a task-less 1:1 review-to-spec reconcile — mutually exclusive with `task`",
-          ),
-        base: z
-          .string()
-          .optional()
-          .describe("the base branch/commit to diff the worktree against"),
-      },
-      outputSchema: ENVELOPE_OUTPUT_SHAPE,
-      annotations: READ_ONLY,
-    },
-    ({ task, spec, base }) => {
-      // Exactly one of task/spec — the CLI takes a single positional.
-      if ((task === undefined) === (spec === undefined)) {
-        return tool_error("pass exactly one of `task` or `spec`");
-      }
-      // A spec id passes through VERBATIM (`SPEC-x` must not be lowercased); a task is normalized to its
-      // reviewable stem. Both are validated as a single safe path segment before the subprocess runs.
-      const positional = spec !== undefined ? spec : task_stem(task as string);
-      if (!is_safe_segment(positional)) {
-        return tool_error(
-          `invalid ${spec !== undefined ? "spec id" : "task id/stem"}: ${spec ?? task}`,
-        );
-      }
-      // A base ref legitimately contains `/`/`~` (origin/main, HEAD~1) — validate it as a base, and
-      // REJECT an invalid one rather than silently dropping it (which would diff against the wrong base
-      // with no error the agent could detect).
-      if (typeof base === "string" && !is_safe_base(base)) {
-        return tool_error(`invalid --base value: ${base}`);
-      }
-      const baseArg = typeof base === "string" ? base : undefined;
-      return respond(
-        invoke_suspec(ctx.env, "review", [positional], { base: baseArg }),
-        "review",
-      );
-    },
-  );
-
-  // --- loader tools (the parsed-artifact projections, on `suspec show … --json`) -------------------
-  server.registerTool(
-    "suspec_get_task",
-    {
-      title: "Get a parsed task packet",
-      description:
-        "The task packet's scope, affected areas, claimed changes, frontmatter (id/source/status), and the " +
-        "cross-root embedded spec slice (embeddedSpecId/embeddedRequirements) when present. " +
-        "concise returns the scope-bearing identity slice; detailed the full packet. Read-only.",
-      inputSchema: {
-        task: z.string().describe("task id or stem"),
-        ...responseFormatInput,
-      },
-      outputSchema: ENVELOPE_OUTPUT_SHAPE,
-      annotations: READ_ONLY,
-    },
-    ({ task, response_format }) => {
-      // Pass the id/slug through unchanged: `suspec show task` resolves either `pastebin` or
-      // `TASK-pastebin` to the canonical tasks/TASK-<slug>.md, so pre-stripping the prefix (which
-      // mismatched the file `suspec new task` writes) is both unnecessary and wrong.
-      if (!is_safe_segment(task)) {
-        return tool_error(`invalid task id/stem: ${task}`);
-      }
-      const format = resolve_format(response_format);
-      return respond(invoke_suspec(ctx.env, "show", ["task", task]), "plain", {
-        format,
-        slice: slice_show_task,
-      });
-    },
-  );
-
-  server.registerTool(
-    "suspec_get_spec",
-    {
-      title: "Get a parsed spec",
-      description:
-        "The spec's frontmatter (incl. the living-spec snapshot/supersededBy fields), requirements (id + line + " +
-        "named verify command), sections, and the append-only `## Execution` run-record (the durable history of " +
-        "each change once tasks/reviews are ephemeral). concise drops the Execution prose + line " +
-        "numbers; detailed returns it whole. Read-only.",
-      inputSchema: {
-        spec: z.string().describe("spec id (e.g. SPEC-auth)"),
-        ...responseFormatInput,
-      },
-      outputSchema: ENVELOPE_OUTPUT_SHAPE,
-      annotations: READ_ONLY,
-    },
-    ({ spec, response_format }) => {
-      if (!is_safe_segment(spec)) {
-        return tool_error(`invalid spec id: ${spec}`);
-      }
-      const format = resolve_format(response_format);
-      return respond(invoke_suspec(ctx.env, "show", ["spec", spec]), "plain", {
-        format,
-        slice: slice_show_spec,
-      });
-    },
-  );
-
-  server.registerTool(
-    "suspec_get_review",
-    {
-      title: "Get a parsed review packet",
-      description:
-        "The review packet's status, coverage rows, verify blocks, and identity/staleness frontmatter (which " +
-        "spec/task it reviews, plus the fast-track reviewedSha/evidenceHash pins). concise drops the " +
-        "evidence prose + staleness pins; detailed returns them. Read-only; the verdict is the human's.",
-      inputSchema: {
-        task: z
-          .string()
-          .describe(
-            "task id or stem; for a task-less review pass its filename stem (the review is reviews/<stem>.md)",
-          ),
-        ...responseFormatInput,
-      },
-      outputSchema: ENVELOPE_OUTPUT_SHAPE,
-      annotations: READ_ONLY,
-    },
-    ({ task, response_format }) => {
-      const stem = task_stem(task);
-      if (!is_safe_segment(stem)) {
-        return tool_error(`invalid task id/stem: ${task}`);
-      }
-      const format = resolve_format(response_format);
-      return respond(invoke_suspec(ctx.env, "show", ["review", stem]), "plain", {
-        format,
-        slice: slice_show_review,
-      });
-    },
-  );
-
   server.registerTool(
     "suspec_get_checks",
     {
       title: "Get the checks contract",
       description:
-        "The checks contract — version + the core checks (id/name/severity). What review must satisfy. " +
-        "concise drops the human-readable check names; detailed returns them.",
+        "The checks contract — version + the core checks (id/name/severity). What the artifact lint " +
+        "and review reconcile hold artifacts to. concise drops the human-readable check names; " +
+        "detailed returns them.",
       inputSchema: { ...responseFormatInput },
       outputSchema: ENVELOPE_OUTPUT_SHAPE,
       annotations: READ_ONLY,
@@ -353,54 +198,92 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
     },
   );
 
-  // --- SAFE-WRITE tier (AC-009) — verdict-free prepare ops -----------------------------------------
+  // --- RECONCILE tier ------------------------------------------------------------------------------
+  server.registerTool(
+    "suspec_reconcile",
+    {
+      title: "Reconcile a store run vs its spec (no verdict)",
+      description:
+        "Reconcile a STORE run against its driving spec via `suspec review <RUN>`: (1) artifact lint — " +
+        "the run record, its spec, the review packet if one exists, every evidence record; (2) the " +
+        "evidence-vs-AC rows — every spec AC against the run's evidence records (verified / stale / " +
+        "failing / missing), the SAME rows `suspec done` gates on, previewed without closing anything. " +
+        "Returns facts + a derived human-attention list; never a verdict — the human owns the result " +
+        "(`suspec done` is the gate). If the run does not exist in the store, returns a structured " +
+        '"no such run" result, not an error.',
+      inputSchema: {
+        run: z
+          .string()
+          .describe(
+            "the store run slug (the `run-<slug>.md` filename stem — list runs via suspec_get_status or suspec_list)",
+          ),
+      },
+      outputSchema: ENVELOPE_OUTPUT_SHAPE,
+      annotations: READ_ONLY,
+    },
+    ({ run }) => {
+      // A run ref is a slug, never a path — validated as a single safe segment before the subprocess.
+      if (!is_safe_segment(run)) {
+        return tool_error(`invalid run slug: ${run}`);
+      }
+      return respond(invoke_suspec(ctx.env, "review", [run]), "review");
+    },
+  );
+
+  // --- SAFE-WRITE tier — verdict-free prepare ops ----------------------------------------------------
   register_safe_write_tools(server, ctx);
 }
 
-// The verdict-free safe-write tier (AC-009 / ADR-0077 D8). Each tool scaffolds ONE fresh artifact via a
-// verdict-free CLI prepare op (`new spec` / `new task --from` / `promote`) and never overwrites (no
-// `--force`), never writes the board, never writes a review result, and issues NO verdict. The slug/id is
-// validated as a single safe path segment before the subprocess runs.
+// The verdict-free safe-write tier (ADR-0084 prepare verbs, re-aimed at the store). Each tool scaffolds
+// ONE fresh STORE artifact via a verdict-free CLI prepare op (`write spec` / `new task --from`) and
+// never overwrites (no `--force`), never launches a runner (no `--launch`), never writes a review
+// result, and issues NO verdict. Every input is validated before the subprocess runs.
 function register_safe_write_tools(server: McpServer, ctx: Ctx): void {
   server.registerTool(
     "suspec_scaffold_spec",
     {
-      title: "Scaffold a fresh draft spec (prepare op — no verdict)",
+      title: "Scaffold a draft store spec from an intent (prepare op — no verdict)",
       description:
-        "VERDICT-FREE PREPARE OP: scaffold a fresh draft `specs/<slug>/spec.md` from the kit " +
-        "template via `suspec new spec`. Creates the skeleton for an author to fill; it never overwrites an " +
-        "existing spec. Returns the created path + spec id.",
+        "VERDICT-FREE PREPARE OP: scaffold a fresh draft STORE spec (`spec-<slug>.md`) from a one-line " +
+        "intent via `suspec write spec` — frontmatter (status: draft, base_sha = repo HEAD), the intent " +
+        "line, and ONE empty AC with a Verify placeholder. The CLI authors NO requirement content; an " +
+        "author fills the ACs. It never dispatches a runner (no --launch) and reuses (never overwrites) " +
+        "an existing spec for the same slug. Returns the created spec id + store path.",
       inputSchema: {
-        slug: z
+        intent: z
           .string()
           .describe(
-            "the spec slug (letters/digits/._- only); becomes SPEC-<slug> at specs/<slug>/spec.md",
+            'the one-line intent that seeds the spec (e.g. "add dark mode to settings"); the CLI derives the slug',
           ),
       },
       outputSchema: ENVELOPE_OUTPUT_SHAPE,
       annotations: SAFE_WRITE,
     },
-    ({ slug }) => {
-      if (!is_safe_segment(slug)) {
-        return tool_error(`invalid spec slug: ${slug}`);
+    ({ intent }) => {
+      const cleaned = intent.trim().replace(/\s+/g, " ");
+      if (!is_safe_intent(cleaned)) {
+        return tool_error(`invalid intent: ${intent}`);
       }
-      return respond(invoke_suspec(ctx.env, "new", ["spec", slug]));
+      return respond(invoke_suspec(ctx.env, "write", ["spec", cleaned]));
     },
   );
 
   server.registerTool(
     "suspec_split_task",
     {
-      title: "Split a spec into a task slice (prepare op — no verdict)",
+      title: "Split a store spec into a task slice (prepare op — no verdict)",
       description:
-        "VERDICT-FREE PREPARE OP: cut a task packet from a named spec via `suspec new task " +
-        "--from <SPEC>`, copying the named requirement ids into its Scope (scope is COPIED, never invented). " +
-        "Use when one spec fans out into parallel slices — 1:1 work needs no task. It never overwrites an " +
-        "existing packet. Returns the created path + task id + scope.",
+        "VERDICT-FREE PREPARE OP: cut a STORE task slice (`task-<slug>.md`) from a store spec via " +
+        "`suspec new task --from <SPEC>`, copying the named requirement ids into its Scope (scope is " +
+        "COPIED, never invented). Use when one spec fans out into parallel slices — 1:1 work needs no " +
+        "task (implement against the spec; record the run in its `## Execution`). It never overwrites " +
+        "an existing slice. Returns the created store path + task id + scope.",
       inputSchema: {
         spec: z
           .string()
-          .describe("the source spec id (e.g. SPEC-auth) to cut the task from"),
+          .describe(
+            "the source spec id or slug (e.g. SPEC-auth), resolved against the store's spec-*.md files",
+          ),
         scope: z
           .array(z.string())
           .optional()
@@ -428,34 +311,6 @@ function register_safe_write_tools(server: McpServer, ctx: Ctx): void {
         flags["--scope"] = scopeIds.join(",");
       }
       return respond(invoke_suspec(ctx.env, "new", ["task"], { flags }));
-    },
-  );
-
-  server.registerTool(
-    "suspec_scaffold_finding",
-    {
-      title: "Scaffold a candidate finding (prepare op — no verdict)",
-      description:
-        "VERDICT-FREE PREPARE OP: scaffold ONE candidate `findings/<slug>.md` from a finished " +
-        "task/review id via `suspec promote`, pre-filling `from:` and leaving the what-we-learned body a " +
-        "placeholder. It asserts NO learning of its own (status: candidate, never accepted) — acceptance is " +
-        "the owner's. Backs the suspec_finding_candidate prompt. It never overwrites an existing finding. " +
-        "Returns the created path + slug.",
-      inputSchema: {
-        from: z
-          .string()
-          .describe(
-            "the task/review id the finding is promoted from (e.g. TASK-auth) — pre-fills `from:`",
-          ),
-      },
-      outputSchema: ENVELOPE_OUTPUT_SHAPE,
-      annotations: SAFE_WRITE,
-    },
-    ({ from }) => {
-      if (!is_safe_segment(from)) {
-        return tool_error(`invalid task/review id: ${from}`);
-      }
-      return respond(invoke_suspec(ctx.env, "promote", [from]));
     },
   );
 }

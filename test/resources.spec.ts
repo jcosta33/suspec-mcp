@@ -1,22 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import {
-  mkdtempSync,
-  rmSync,
-  mkdirSync,
-  writeFileSync,
-  readFileSync,
-  existsSync,
-} from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { create_server } from "../src/server.ts";
 
-// Exercises the resource surface (fixed + templated) over the in-memory transport, against the stub.
-// STUB_LOG records every subprocess argv, so the "no subprocess on a rejected id" claim is provable.
+// Exercises the resource surface (fixed URIs only in v2 — the templated artifact resources retired
+// with the store pivot) over the in-memory transport, against the stub. STUB_LOG records every
+// subprocess argv.
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 const stubBin = join(fixtures, "stub-suspec.mjs");
 const errorBin = join(fixtures, "error-suspec.mjs"); // always emits a structured CLI error
@@ -26,11 +20,6 @@ let root: string;
 let logPath: string;
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "suspec-mcp-res-"));
-  mkdirSync(join(root, "findings"), { recursive: true });
-  writeFileSync(
-    join(root, "findings", "lesson.md"),
-    "# Finding\n\nA durable lesson.",
-  );
   logPath = `${root}.log`;
   process.env.STUB_LOG = logPath;
 });
@@ -75,7 +64,7 @@ const firstText = (r: { contents: { text?: string }[] }): string =>
 
 // Symmetric to the tool sweep (server.spec INV-002): no resource body may carry a suspec-mcp-AUTHORED
 // verdict key. Resources serve the CLI's data verbatim (only `workspace` wraps it, adding
-// noVerdictIssued) — none routes the `suspec check` verdict field — so no forbidden key should appear.
+// noVerdictIssued) — so no forbidden key should appear.
 const FORBIDDEN_VERDICT_KEYS = [
   "verdict",
   "pass",
@@ -98,7 +87,7 @@ function collect_keys(obj: unknown, acc: string[] = []): string[] {
 }
 
 describe("suspec-mcp resources", () => {
-  it("lists fixed resources + templated resources", async () => {
+  it("lists the fixed resources and NO templated artifact resource (retired with the store pivot)", async () => {
     const { client, close } = await connect();
     try {
       const fixed = (await client.listResources()).resources
@@ -109,15 +98,8 @@ describe("suspec-mcp resources", () => {
         "suspec://status",
         "suspec://workspace",
       ]);
-      const templates = (await client.listResourceTemplates()).resourceTemplates
-        .map((r) => r.uriTemplate)
-        .sort();
-      expect(templates).toEqual([
-        "suspec://findings/{id}",
-        "suspec://reviews/{id}",
-        "suspec://specs/{id}",
-        "suspec://tasks/{id}",
-      ]);
+      const templates = (await client.listResourceTemplates()).resourceTemplates;
+      expect(templates).toEqual([]);
     } finally {
       await close();
     }
@@ -126,24 +108,13 @@ describe("suspec-mcp resources", () => {
   it("no resource body carries a suspec-mcp-authored verdict key (INV-002, symmetric to the tool sweep)", async () => {
     const { client, close } = await connect();
     try {
-      const uris = [
+      for (const uri of [
         "suspec://workspace",
         "suspec://status",
         "suspec://checks",
-        "suspec://tasks/feat",
-        "suspec://specs/SPEC-feat",
-        "suspec://reviews/feat",
-        "suspec://findings/lesson",
-      ];
-      for (const uri of uris) {
+      ]) {
         const text = firstText(await client.readResource({ uri }));
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(text);
-        } catch {
-          continue; // findings are raw markdown, not JSON — no authored object to scan
-        }
-        const keys = collect_keys(parsed);
+        const keys = collect_keys(JSON.parse(text));
         for (const forbidden of FORBIDDEN_VERDICT_KEYS) {
           expect(
             keys,
@@ -159,60 +130,23 @@ describe("suspec-mcp resources", () => {
   it("reads the fixed resources (workspace / status / checks)", async () => {
     const { client, close } = await connect();
     try {
-      expect(
-        firstText(await client.readResource({ uri: "suspec://workspace" })),
-      ).toContain('"mode": "read+reconcile+scaffold, no verdict"');
+      const workspace = firstText(
+        await client.readResource({ uri: "suspec://workspace" }),
+      );
+      expect(workspace).toContain('"mode": "read+reconcile+scaffold, no verdict"');
+      // the binding names the repo root + carries the store summary
+      expect(workspace).toContain('"repoRoot"');
+      expect(workspace).toContain("run-feat.md");
       expect(
         firstText(await client.readResource({ uri: "suspec://status" })),
-      ).toContain('"level"');
+      ).toContain('"next"');
       expect(
         firstText(await client.readResource({ uri: "suspec://checks" })),
       ).toContain('"version"');
-    } finally {
-      await close();
-    }
-  });
-
-  it("reads the templated artifact resources (task / spec / review / finding)", async () => {
-    const { client, close } = await connect();
-    try {
-      expect(
-        firstText(await client.readResource({ uri: "suspec://tasks/feat" })),
-      ).toContain("TASK-feat");
-      expect(
-        firstText(
-          await client.readResource({ uri: "suspec://specs/SPEC-feat" }),
-        ),
-      ).toContain("SPEC-feat");
-      expect(
-        firstText(await client.readResource({ uri: "suspec://reviews/feat" })),
-      ).toContain("needs-human");
-      // findings have no parser — served as raw markdown from disk, root-confined
-      expect(
-        firstText(
-          await client.readResource({ uri: "suspec://findings/lesson" }),
-        ),
-      ).toContain("A durable lesson");
-    } finally {
-      await close();
-    }
-  });
-
-  it("rejects a flag-shaped id on every validated template with a labelled error and NO subprocess", async () => {
-    const { client, close } = await connect();
-    try {
-      for (const uri of [
-        "suspec://tasks/--help",
-        "suspec://reviews/--help",
-        "suspec://specs/--help",
-        "suspec://findings/--help",
-      ]) {
-        expect(firstText(await client.readResource({ uri }))).toMatch(
-          /"error": ?"InvalidId"/,
-        );
+      // only read verbs ran (status / show checks) — never a mutation
+      for (const argv of invocations()) {
+        expect(["status", "show"]).toContain(argv[0]);
       }
-      // The id was rejected BEFORE any `suspec show` subprocess ran (not after, on a non-zero exit).
-      expect(invocations()).toEqual([]);
     } finally {
       await close();
     }
@@ -243,26 +177,15 @@ describe("suspec-mcp resources", () => {
     }
   });
 
-  it("a missing finding reads as a labelled placeholder; a traversal-shaped id is rejected, never read", async () => {
-    const { client, close } = await connect();
+  it("the workspace resource degrades to store:null when the CLI errors (never a thrown read)", async () => {
+    const { client, close } = await connect(errorBin);
     try {
-      // A well-formed but absent id resolves to the labelled placeholder (existsSync false arm).
-      expect(
-        firstText(
-          await client.readResource({
-            uri: "suspec://findings/does-not-exist",
-          }),
-        ),
-      ).toMatch(/no finding/i);
-      // A traversal-shaped id (`%2f`, `..`) fails is_safe_segment → InvalidId, with no file read at
-      // all — so it cannot escape the root and cannot read /etc/passwd's contents.
-      const rejected = firstText(
-        await client.readResource({
-          uri: "suspec://findings/..%2f..%2fetc%2fpasswd",
-        }),
+      const text = firstText(
+        await client.readResource({ uri: "suspec://workspace" }),
       );
-      expect(rejected).toMatch(/"error": ?"InvalidId"/);
-      expect(rejected).not.toMatch(/root:.*:0:0:/);
+      const parsed = JSON.parse(text) as { store: unknown; noVerdictIssued: boolean };
+      expect(parsed.store).toBeNull();
+      expect(parsed.noVerdictIssued).toBe(true);
     } finally {
       await close();
     }

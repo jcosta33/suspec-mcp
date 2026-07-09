@@ -39,10 +39,10 @@ describe("real stdio transport (AC-001)", () => {
     try {
       const tools = (await client.listTools()).tools.map((t) => t.name);
       expect(tools).toContain("suspec_get_status");
-      expect(tools).toContain("suspec_get_task");
+      expect(tools).toContain("suspec_check_store");
       expect(tools).toContain("suspec_reconcile");
       expect(tools).toContain("suspec_scaffold_spec");
-      expect(tools).toHaveLength(12);
+      expect(tools).toHaveLength(8);
 
       const result = (await client.callTool({
         name: "suspec_get_status",
@@ -50,11 +50,11 @@ describe("real stdio transport (AC-001)", () => {
       })) as {
         structuredContent: {
           noVerdictIssued: boolean;
-          data: { specs: unknown[] };
+          data: { active: unknown[] };
         };
       };
       expect(result.structuredContent.noVerdictIssued).toBe(true);
-      expect(result.structuredContent.data.specs.length).toBeGreaterThan(0);
+      expect(result.structuredContent.data.active.length).toBeGreaterThan(0);
     } finally {
       await client.close();
     }

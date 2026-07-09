@@ -13,9 +13,9 @@ import { resolveSuspecBin } from "../scripts/resolve-suspec-bin.mjs";
 // is hand-edited or goes stale against the binary — the fixture's job is to be the binary's output, so a
 // drift between "what's checked in" and "what the binary now emits" must fail here, loudly.
 //
-// The comparison normalizes the two volatile, environment-specific values the binary stamps — absolute
-// filesystem paths (the temp workspace) and the review's content-addressed evidenceDigest (a hash of the
-// generated diff/packet) — to a placeholder, so the test asserts the SHAPE + the stable values, not the
+// The comparison normalizes the volatile, environment-specific values the binary stamps — the absolute
+// filesystem paths of the temp scratch repo + store (`path` / `spec_path` / `store`) — to a
+// placeholder, so the test asserts the SHAPE + the stable values, not the
 // machine it ran on. If the suspec binary is not present, the test is skipped (not failed): CI that lacks
 // a sibling suspec-cli checkout cannot regenerate, and a false red there would be noise — but the skip is
 // LOUD (a stderr warning names what was looked for), so a disarmed tripwire is visible, never silent.
@@ -27,37 +27,27 @@ const suspecBin = resolveSuspecBin(repoRoot);
 const checkedInDir = join(here, "fixtures");
 
 const FIXTURES = [
-  "new-spec",
+  "write-spec",
   "new-task",
-  "promote",
   "status",
-  "check-workspace",
+  "store-list",
+  "check-store",
   "check-file",
   "show-checks",
-  "show-spec",
-  "show-task",
   "review-report",
-  "show-review",
 ];
 
-// Replace the two environment-specific values with a stable placeholder so the structural compare is about
-// SHAPE + stable content, not the absolute temp path or the content hash of a freshly generated diff.
+// Replace the environment-specific values with a stable placeholder so the structural compare is about
+// SHAPE + stable content, not the absolute temp scratch path the generator ran in. In the v2 store
+// shapes, every absolute path travels under a known key (`path` / `spec_path` / `store`).
 function normalize(value: unknown): unknown {
-  if (typeof value === "string") {
-    // an absolute path anywhere in the tree (the temp workspace root) → a placeholder.
-    return value.replace(/\/[^\s"]*?\/(specs|tasks|reviews|findings|\.worktrees)\//g, "/<root>/$1/").replace(
-      /^\/.*$/,
-      (m) => (m.includes("/") && /\.(md|ts|txt)$/.test(m) ? "<path>" : m),
-    );
-  }
   if (Array.isArray(value)) {
     return value.map(normalize);
   }
   if (value !== null && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      // hashes / digests are content-addressed over the generated diff → not stable across runs.
-      if (k === "evidenceDigest" || k === "path" || k === "worktreePath") {
+      if (k === "path" || k === "spec_path" || k === "store") {
         out[k] = "<volatile>";
       } else {
         out[k] = normalize(v);
@@ -109,7 +99,7 @@ describe.skipIf(!suspecPresent)(
       } finally {
         rmSync(tmp, { recursive: true, force: true });
       }
-      // Spawns the real suspec binary to regenerate 11 fixtures; legitimately
+      // Spawns the real suspec binary to regenerate 8 fixtures; legitimately
       // exceeds the 5s default under the parallel coverage run. Not a race — a
       // genuinely slow subprocess, so a longer per-test timeout is the right fix.
     }, 60_000);

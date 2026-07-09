@@ -36,7 +36,7 @@ function promptText(result: {
 }
 
 describe("suspec-mcp prompts", () => {
-  it("lists the five v0 prompts", async () => {
+  it("lists the three v2 prompts (task_briefing / finding_candidate retired with their tools)", async () => {
     const { client, close } = await connect();
     try {
       const names = (await client.listPrompts()).prompts
@@ -46,9 +46,7 @@ describe("suspec-mcp prompts", () => {
         [
           "suspec_before_done",
           "suspec_evidence_rule",
-          "suspec_finding_candidate",
           "suspec_review_assistant",
-          "suspec_task_briefing",
         ].sort(),
       );
     } finally {
@@ -56,20 +54,19 @@ describe("suspec-mcp prompts", () => {
     }
   });
 
-  it("before_done tells the implementer it may NOT approve its own work", async () => {
+  it("before_done points at reconcile + evidence capture and tells the implementer it cannot close the gate", async () => {
     const { client, close } = await connect();
     try {
       const r = (await client.getPrompt({
         name: "suspec_before_done",
-        arguments: { task: "TASK-x" },
+        arguments: { run: "demo" },
       })) as {
         messages: { content: { type: string; text?: string } }[];
       };
       const text = promptText(r);
-      expect(text).toMatch(/ready for review/i);
-      expect(text).toMatch(
-        /may not approve|not approve it|independent reviewer owns/i,
-      );
+      expect(text).toMatch(/suspec_reconcile/);
+      expect(text).toMatch(/suspec evidence add demo/);
+      expect(text).toMatch(/may not close the gate|suspec done.*human/i);
       expect(text).toMatch(/Unverified/);
     } finally {
       await close();
@@ -81,7 +78,7 @@ describe("suspec-mcp prompts", () => {
     try {
       const r = (await client.getPrompt({
         name: "suspec_review_assistant",
-        arguments: { task: "TASK-x" },
+        arguments: { run: "demo" },
       })) as {
         messages: { content: { type: string; text?: string } }[];
       };
@@ -89,6 +86,25 @@ describe("suspec-mcp prompts", () => {
       expect(text).toMatch(/did NOT author|not author/i);
       expect(text).toMatch(/falsify|not a result to trust/i);
       expect(text).toMatch(/do not approve/i);
+      expect(text).toMatch(/cli-verified/);
+    } finally {
+      await close();
+    }
+  });
+
+  it("evidence_rule pins the v2 rule: only fresh cli-verified capture counts", async () => {
+    const { client, close } = await connect();
+    try {
+      const r = (await client.getPrompt({
+        name: "suspec_evidence_rule",
+        arguments: {},
+      })) as {
+        messages: { content: { type: string; text?: string } }[];
+      };
+      const text = promptText(r);
+      expect(text).toMatch(/a claim is not evidence/i);
+      expect(text).toMatch(/cli-verified/);
+      expect(text).toMatch(/suspec done/);
     } finally {
       await close();
     }
@@ -99,17 +115,17 @@ describe("suspec-mcp prompts", () => {
     try {
       for (const p of (await client.listPrompts()).prompts) {
         const args =
-          p.arguments && p.arguments.length > 0 ? { task: "TASK-x" } : {};
+          p.arguments && p.arguments.length > 0 ? { run: "demo" } : {};
         const r = (await client.getPrompt({
           name: p.name,
           arguments: args,
         })) as {
           messages: { content: { type: string; text?: string } }[];
         };
-        // a prompt may discuss NOT approving ("you may NOT approve it"), but must never GRANT the
+        // a prompt may discuss NOT approving ("you may NOT close the gate"), but must never GRANT the
         // authority — so the patterns match grant-forms only, with a lookbehind excluding negations.
         expect(promptText(r)).not.toMatch(
-          /\byou (may|can|should) (?!not\b)(approve|merge|pass)\b|(?<!not )\bmerge it\b|\bgo ahead and (approve|merge)\b|\brecord (a )?pass\b/i,
+          /\byou (may|can|should) (?!not\b)(approve|merge|pass|close the gate)\b|(?<!not )\bmerge it\b|\bgo ahead and (approve|merge)\b|\brecord (a )?pass\b/i,
         );
       }
     } finally {

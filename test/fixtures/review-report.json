@@ -1,50 +1,36 @@
 {
   "level": "warning",
-  "task": "TASK-demo-feature",
-  "diffChangedFiles": [
-    "src-file.txt"
-  ],
-  "coverage": [
+  "runSlug": "demo",
+  "specId": "SPEC-demo-feature",
+  "lint": [
     {
-      "id": "AC-002",
-      "kind": "uncovered",
-      "message": "requirement AC-002 is in scope but has no coverage row (uncovered)"
+      "path": "/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-0IUg0L/state/repo/run-demo.md",
+      "diagnostics": []
+    },
+    {
+      "path": "/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-0IUg0L/state/repo/spec-demo-feature.md",
+      "diagnostics": []
     }
   ],
-  "verifyBinding": [
+  "evidence": [
     {
-      "id": "AC-001",
-      "kind": "free-form-only",
-      "message": "coverage row AC-001 is Pass with only a free-form Evidence cell (advisory — add a `verify` block to machine-confirm, or leave as-is to route to human attention)"
+      "ac": "AC-001",
+      "command": "git --version",
+      "exit": 0,
+      "evidenceRef": "001-git-version.md",
+      "provenance": "cli-verified",
+      "status": "verified"
+    },
+    {
+      "ac": "AC-002",
+      "command": "`second test`",
+      "exit": null,
+      "evidenceRef": null,
+      "provenance": null,
+      "status": "missing"
     }
   ],
-  "scopeDivergence": [],
-  "selfReport": {
-    "claimedNotInDiff": [],
-    "inDiffNotClaimed": [],
-    "outsideScope": [],
-    "runSummaryUnparsed": true
-  },
-  "doNotChangeTouched": [],
-  "emptyEvidencePassRows": [
-    "AC-001"
-  ],
-  "packetStructural": {
-    "badResultCells": [],
-    "badStatus": null,
-    "statusPassContradicted": false,
-    "missingSections": [
-      "Summary",
-      "Changed files",
-      "Suggested decision"
-    ]
-  },
-  "packetSize": {
-    "changedLoc": 0,
-    "filesTouched": 0
-  },
-  "specCoverageDrift": null,
-  "evidenceDigest": "d9dc0bbe6b0adfa4",
-  "reviewStale": null,
-  "hasReviewPacket": true
+  "gaps": [
+    "AC-002"
+  ]
 }

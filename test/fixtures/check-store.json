@@ -1,0 +1,15 @@
+{
+  "level": "clean",
+  "runCount": 1,
+  "specCount": 1,
+  "artifacts": [
+    {
+      "path": "/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-0IUg0L/state/repo/run-demo.md",
+      "diagnostics": []
+    },
+    {
+      "path": "/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-0IUg0L/state/repo/spec-demo-feature.md",
+      "diagnostics": []
+    }
+  ]
+}

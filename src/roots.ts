@@ -1,7 +1,7 @@
 // Root-confinement for a shell-out adapter. Three untrusted inputs reach the CLI: a file PATH (for
-// check_file / file resources), a task STEM / spec id (for review / show), and a git BASE ref. All are
-// validated here before any subprocess runs, so a malicious client cannot make `suspec` read outside the
-// workspace, inject a flag, or break the spawn.
+// check_file), a run/spec/AC SLUG (for review / new task), and a free-text INTENT line (for `write
+// spec`). All are validated here before any subprocess runs, so a malicious client cannot make
+// `suspec` read outside the repo, inject a flag, or break the spawn.
 
 import { resolve, isAbsolute, relative, dirname } from "node:path";
 import { realpathSync, existsSync } from "node:fs";
@@ -67,8 +67,8 @@ function inside_root(rel: string): boolean {
   );
 }
 
-// A task stem / spec id is interpolated by the CLI into `tasks/<stem>.md` etc. — it must be a single
-// safe path segment, never a separator or traversal token.
+// A run slug / spec id / AC id is interpolated by the CLI into `run-<slug>.md` etc. in the store — it
+// must be a single safe path segment, never a separator or traversal token.
 export function is_safe_segment(segment: string): boolean {
   // Reject separators, traversal, and a leading `-` (a flag-shaped stem like `--help` would be parsed
   // by the CLI as an option, not the task to review).
@@ -80,24 +80,18 @@ export function is_safe_segment(segment: string): boolean {
   );
 }
 
-// A git base ref legitimately contains letters, digits, and `._/~^@{}-` (e.g. `origin/main`, `HEAD~1`,
-// `HEAD^`, `v1.2.3`, `HEAD@{1}`); a commit SHA is hex. It is NOT a single safe segment (it carries `/`).
-// We OWN the safety here rather than leaning on which git subcommand the CLI runs downstream: the
-// allow-list rejects `=` and `:` and every shell / transport-option metacharacter (the `--upload-pack=`,
-// `ext::`, backtick, `$()`, `|`, `;`, `&` families), so a malicious base can never become a git option
-// or a second command even if a future code path feeds it to an option-accepting git subcommand. A
-// leading `-` is still rejected explicitly (the allow-list permits `-` mid-ref, e.g. `feature-x`). An
-// invalid base is rejected, never silently dropped (which would diff against the wrong base).
-export function is_safe_base(base: string): boolean {
-  return (
-    base.length > 0 &&
-    !base.startsWith("-") &&
-    /^[A-Za-z0-9._/~^@{}-]+$/.test(base)
-  );
-}
-
-// The reviewable token for a task is its id minus a leading `TASK-`, lower-cased (mirrors the CLI's
-// `review_slug`); the board reports the id, the CLI reads `tasks/<stem>.md`.
-export function task_stem(taskIdOrStem: string): string {
-  return taskIdOrStem.replace(/^TASK-/i, "").toLowerCase();
+// The one-line intent `suspec write spec` scaffolds from. Free text by design (the CLI slugs it
+// itself), so the guard is minimal but real: non-empty, bounded (the CLI caps the slug; a multi-KB
+// blob is abuse, not an intent), no control characters (a NUL breaks spawn; newlines are never part
+// of a one-liner), and not flag-shaped (a leading `-` would be parsed by the CLI as an option).
+export function is_safe_intent(intent: string): boolean {
+  if (intent.length === 0 || intent.length > 300 || intent.startsWith("-")) {
+    return false;
+  }
+  for (let i = 0; i < intent.length; i += 1) {
+    if (intent.charCodeAt(i) < 0x20) {
+      return false;
+    }
+  }
+  return true;
 }

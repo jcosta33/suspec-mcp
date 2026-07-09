@@ -1,7 +1,8 @@
 {
   "level": "clean",
-  "path": "/private/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-aWGsGm/tasks/TASK-prep-demo.md",
-  "taskId": "TASK-prep-demo",
+  "path": "/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-0IUg0L/state/repo/task-demo-feature.md",
+  "taskId": "TASK-demo-feature",
+  "specId": "SPEC-demo-feature",
   "scope": [
     "AC-001"
   ],
