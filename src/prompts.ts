@@ -51,8 +51,9 @@ export function register_prompts(server: McpServer): void {
       user_text(
         `You are reviewing run ${run}, which you did NOT author.\n\n` +
           `Call suspec_reconcile (run: ${run}) and RE-DERIVE the facts yourself: read the evidence rows ` +
-          `against the spec's ACs, and read the store spec + run record directly (their absolute paths are ` +
-          `in the store — suspec_get_status lists them). A clean reconcile from the implementer is a ` +
+          `against the spec's ACs, and load the store spec + run record yourself — ` +
+          `suspec_get_artifact (kind: spec|run, ref: <id or slug>); suspec_get_status lists the ` +
+          `filenames. A clean reconcile from the implementer is a ` +
           `starting point to falsify, not a result to trust — the implementer may have pre-closed the ` +
           `mechanical gaps; verify, do not assume.\n\n` +
           `Every AC needs fresh, exit-0, cli-verified evidence; anything else reads Unverified. Route ` +
