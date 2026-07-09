@@ -5,7 +5,8 @@ personal-harness discipline inside an agent's reach — so an agent mid-run can 
 store?"_, _"what evidence is missing?"_, _"what will `done` gate on?"_ — and **be told facts and a
 human-attention list, never a Pass/Fail it could launder into a green checkmark.**
 
-Suspec v2 is a personal harness (ADR-0137): artifacts — intake, spec, run, review, finding — are the
+Suspec v2 is a personal harness (ADR-0137): artifacts — intake, spec, task, run, review, finding,
+change plan — are the
 agent's transient typed working memory in a user-level **store** (default `~/.claude/state/<repo-name>/`),
 never repo files. There is no committed workspace, no board, and no workspace verdict. Durability is by
 promotion (ADRs, tests, GitHub issues, PR comments) — via the CLI, not this server.
