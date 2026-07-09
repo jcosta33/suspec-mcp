@@ -129,8 +129,7 @@ export const RunReviewSchema = z
 export type RunReview = z.infer<typeof RunReviewSchema>;
 
 // --- suspec show checks --json → the checks contract (showArtifact.ts) ------------------------------
-// The one `show` projection the v2 adapter still consumes (the task/spec/review loaders are workspace-
-// tree-bound and cannot reach the store — those tools are retired). `severity` here is pass-through.
+// `severity` here is pass-through.
 export const ShowChecksSchema = z
   .object({
     level: z.literal("clean"),
@@ -148,6 +147,23 @@ export const ShowChecksSchema = z
   })
   .passthrough();
 export type ShowChecks = z.infer<typeof ShowChecksSchema>;
+
+// --- suspec show <kind> <ref> --json → the store loader (showArtifact.ts ShowResult) -----------------
+// The store-resolving loader face (post-realignment CLI: every kind resolves by id-or-slug against the
+// store's flat `<kind>-*.md` files, archive/ as fallback). The adapter RELAYS the projection whole and
+// branches on none of its fields, so per the enum/field policy only the uniform ShowResult wrapper is
+// pinned: `level` (a read never warns — a lookup/parse failure is the CLI's structured exit-2 error,
+// not a degraded success), the echoed `kind` (pass-through), and the presence of an object `value`
+// (the per-kind projection — spec/task/review are parsed records; run/intake are the honest
+// frontmatter+body split; its inner fields are the CLI's own and deliberately unpinned here).
+export const ShowArtifactSchema = z
+  .object({
+    level: z.literal("clean"),
+    kind: z.string(),
+    value: z.object({}).passthrough(),
+  })
+  .passthrough();
+export type ShowArtifact = z.infer<typeof ShowArtifactSchema>;
 
 // --- the SAFE-WRITE tier — verdict-free prepare-op reports ------------------------------------------
 // Each scaffold returns a small report the adapter passes through (it surfaces the created artifact's

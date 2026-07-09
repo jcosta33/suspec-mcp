@@ -11,6 +11,7 @@ import {
   FileCheckSchema,
   RunReviewSchema,
   ShowChecksSchema,
+  ShowArtifactSchema,
   WriteSpecSchema,
   CutTaskSchema,
   SuspecErrorSchema,
@@ -82,6 +83,33 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     expect(ShowChecksSchema.safeParse(fixture("show-checks.json")).success).toBe(
       true,
     );
+  });
+
+  it("show <kind> <ref> --json → ShowArtifact (every store kind's capture parses)", () => {
+    for (const name of [
+      "show-spec.json",
+      "show-run.json",
+      "show-task.json",
+      "show-review.json",
+      "show-finding.json",
+      "show-intake.json",
+    ]) {
+      const parsed = ShowArtifactSchema.safeParse(fixture(name));
+      expect(parsed.success, `${name} must parse as a ShowResult`).toBe(true);
+      if (parsed.success) {
+        // The uniform wrapper: a read is always clean, and the projection is a real object.
+        expect(parsed.data.level).toBe("clean");
+        expect(Object.keys(parsed.data.value).length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("the tripwire FAILS if a show capture loses its projection (`value` dropped/non-object)", () => {
+    const drifted = JSON.parse(
+      readFileSync(join(here, "fixtures", "show-spec.json"), "utf8"),
+    );
+    delete drifted.value;
+    expect(ShowArtifactSchema.safeParse(drifted).success).toBe(false);
   });
 
   it("the SAFE-WRITE tier reports parse: write spec / new task --from", () => {
@@ -194,6 +222,16 @@ describe("the test stub conforms to the SAME contract as the real captured outpu
       expect(gapped?.status).toBe("missing");
     }
   });
+
+  it("stub show <kind> <ref> outputs parse against ShowArtifactSchema for every store kind", () => {
+    for (const kind of ["spec", "run", "review", "task", "finding", "intake"]) {
+      expect(
+        ShowArtifactSchema.safeParse(runStub(["show", kind, "feat"])).success,
+        `stub show ${kind} must parse as a ShowResult`,
+      ).toBe(true);
+    }
+    // Six stub subprocesses; legitimately exceeds the 5s default under the parallel coverage run.
+  }, 30_000);
 
   it("stub show checks / write spec / new task outputs parse against their schemas", () => {
     expect(ShowChecksSchema.safeParse(runStub(["show", "checks"])).success).toBe(

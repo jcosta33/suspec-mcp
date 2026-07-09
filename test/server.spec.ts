@@ -116,6 +116,7 @@ const ALL_TOOL_CALLS = [
   { name: "suspec_list", arguments: {} },
   { name: "suspec_check_store", arguments: {} },
   { name: "suspec_check_file", arguments: { path: "specs/a/spec.md" } },
+  { name: "suspec_get_artifact", arguments: { kind: "spec", ref: "SPEC-x" } },
   { name: "suspec_reconcile", arguments: { run: "feat" } },
   { name: "suspec_get_checks", arguments: {} },
 ];
@@ -130,6 +131,7 @@ describe("suspec-mcp server", () => {
           // read tier
           "suspec_check_file",
           "suspec_check_store",
+          "suspec_get_artifact",
           "suspec_get_checks",
           "suspec_get_status",
           "suspec_list",
@@ -140,8 +142,9 @@ describe("suspec-mcp server", () => {
           "suspec_split_task",
         ].sort(),
       );
-      // The retired v1 surface is GONE: the workspace verdict, the workspace-tree loaders, and the
-      // finding scaffold (promote is a gh-issue mutation now) have no v2 counterpart.
+      // The retired v1 surface is GONE: the workspace verdict, the per-kind get_* loaders (restored
+      // as the single suspec_get_artifact over the store-resolving `show`), and the finding scaffold
+      // (promote is a gh-issue mutation now).
       for (const retired of [
         "suspec_check_workspace",
         "suspec_get_task",
@@ -189,7 +192,9 @@ describe("suspec-mcp server", () => {
     } finally {
       await close();
     }
-  });
+    // A full-sweep test spawns one stub subprocess per tool; legitimately exceeds the 5s default
+    // under the parallel coverage run (same rationale as generated-fixtures.spec.ts).
+  }, 30_000);
 
   it("get_status surfaces the store summary (active artifacts + the next ranking)", async () => {
     const { client, close } = await connectClient();
@@ -353,7 +358,9 @@ describe("suspec-mcp server", () => {
     } finally {
       await close();
     }
-  });
+    // A full-sweep test spawns one stub subprocess per tool; legitimately exceeds the 5s default
+    // under the parallel coverage run (same rationale as generated-fixtures.spec.ts).
+  }, 30_000);
 
   it("no tool adds a verdict key anywhere in its OWN authored content (recursive, INV-002)", async () => {
     const collectKeys = (
@@ -390,7 +397,9 @@ describe("suspec-mcp server", () => {
     } finally {
       await close();
     }
-  });
+    // A full-sweep test spawns one stub subprocess per tool; legitimately exceeds the 5s default
+    // under the parallel coverage run (same rationale as generated-fixtures.spec.ts).
+  }, 30_000);
 
   it("every id-taking tool rejects an unsafe input with isError and runs NO subprocess (the input boundary)", async () => {
     const { client, close } = await connectClient();
@@ -398,6 +407,8 @@ describe("suspec-mcp server", () => {
       const unsafe = [
         { name: "suspec_reconcile", arguments: { run: "../etc" } },
         { name: "suspec_reconcile", arguments: { run: "--help" } },
+        { name: "suspec_get_artifact", arguments: { kind: "spec", ref: "../etc" } },
+        { name: "suspec_get_artifact", arguments: { kind: "run", ref: "--help" } },
         { name: "suspec_scaffold_spec", arguments: { intent: "--launch now" } },
         { name: "suspec_scaffold_spec", arguments: { intent: "   " } },
         { name: "suspec_split_task", arguments: { spec: "../etc" } },
@@ -413,6 +424,48 @@ describe("suspec-mcp server", () => {
       expect(invocations(), "no subprocess ran for any rejected input").toEqual(
         [],
       );
+    } finally {
+      await close();
+    }
+  });
+
+  it("get_artifact loads a store artifact via `show <kind> <ref>` (the restored loader face)", async () => {
+    const { client, close } = await connectClient();
+    try {
+      const r = (await client.callTool({
+        name: "suspec_get_artifact",
+        arguments: { kind: "spec", ref: "SPEC-x" },
+      })) as {
+        structuredContent: {
+          ok: boolean;
+          data: { kind: string; value: { requirements: unknown[] } };
+        };
+      };
+      expect(r.structuredContent.ok).toBe(true);
+      expect(r.structuredContent.data.kind).toBe("spec");
+      expect(
+        r.structuredContent.data.value.requirements.length,
+      ).toBeGreaterThan(0);
+      expect(invocations()).toContainEqual(["show", "spec", "SPEC-x", "--json"]);
+    } finally {
+      await close();
+    }
+  });
+
+  it("get_artifact on a missing ref surfaces the CLI's structured error as a fact, not a tool error", async () => {
+    const { client, close } = await connectClient();
+    try {
+      const r = (await client.callTool({
+        name: "suspec_get_artifact",
+        arguments: { kind: "finding", ref: "ghost" },
+      })) as {
+        isError?: boolean;
+        structuredContent: { ok: boolean; noVerdictIssued: boolean; note?: string };
+      };
+      expect(r.isError).not.toBe(true);
+      expect(r.structuredContent.ok).toBe(false);
+      expect(r.structuredContent.noVerdictIssued).toBe(true);
+      expect(r.structuredContent.note).toMatch(/cannot resolve finding: ghost/);
     } finally {
       await close();
     }

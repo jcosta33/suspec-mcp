@@ -1,9 +1,24 @@
 {
   "level": "clean",
-  "store": "/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-0IUg0L/state/repo",
-  "active_count": 3,
+  "store": "/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-4YcP2r/state/repo",
+  "active_count": 6,
   "archived_count": 0,
   "active": [
+    {
+      "filename": "finding-demo.md",
+      "kind": "finding",
+      "ageDays": 0
+    },
+    {
+      "filename": "intake-demo.md",
+      "kind": "intake",
+      "ageDays": 0
+    },
+    {
+      "filename": "review-demo.md",
+      "kind": "review",
+      "ageDays": 0
+    },
     {
       "filename": "run-demo.md",
       "kind": "run",
@@ -16,7 +31,7 @@
     },
     {
       "filename": "task-demo-feature.md",
-      "kind": "other",
+      "kind": "task",
       "ageDays": 0
     }
   ],

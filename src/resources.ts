@@ -1,8 +1,8 @@
 // The application-driven context surface, v2 (ADR-0137). Fixed URIs only: the repo binding + store
 // summary, and the checks contract. The v1 templated artifact resources (tasks/specs/reviews/findings)
-// are retired with the store pivot — the CLI's `show` loaders are workspace-tree-bound and cannot
-// reach the store; agents read store artifacts directly by absolute path (ADR-0137 D2), and the store
-// summary here carries every artifact's filename. All read-only.
+// stay retired: per-artifact READS are served by the suspec_get_artifact tool (over the CLI's
+// store-resolving `show <kind> <ref>`), and the store summary here carries every artifact's filename —
+// a second, templated-URI face over the same loader would be duplicate surface. All read-only.
 
 import {
   McpServer,

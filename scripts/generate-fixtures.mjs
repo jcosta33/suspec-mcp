@@ -204,6 +204,62 @@ function main() {
       "--version",
     ]);
 
+    // 4b. a review packet, a finding, and an intake note — hand-seeded (stable content) the way the
+    //     run record is, so the store-resolving `show <kind> <ref>` loader face has one artifact of
+    //     every kind to project. The CLI never scaffolds these three (reviews/findings are agent-
+    //     authored, intake is `pull`-captured), so seeding is the only deterministic source.
+    writeFileSync(
+      join(storeDir, "review-demo.md"),
+      [
+        "---",
+        "type: review",
+        "status: draft",
+        "spec: SPEC-demo-feature",
+        "run: demo",
+        "---",
+        "",
+        "# Review — demo",
+        "",
+        "## Requirement coverage",
+        "",
+        "| ID | Result | Evidence | Human attention |",
+        "| --- | --- | --- | --- |",
+        "| AC-001 | Pass | git --version → exit 0 | none |",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(storeDir, "finding-demo.md"),
+      [
+        "---",
+        "type: finding",
+        "id: FINDING-demo",
+        "severity: medium",
+        "run: demo",
+        "affected_areas:",
+        "  - src-file.txt",
+        "---",
+        "",
+        "# A demo finding",
+        "",
+        "The durable lesson this run taught.",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(storeDir, "intake-demo.md"),
+      [
+        "---",
+        "type: intake",
+        "---",
+        "",
+        "# Intake — demo",
+        "",
+        "A raw captured request.",
+        "",
+      ].join("\n"),
+    );
+
     // 5. the READ-tier outputs.
     write("status", suspec(repo, ["status"]));
     write("store-list", suspec(repo, ["store", "list"]));
@@ -213,6 +269,16 @@ function main() {
       suspec(repo, ["check", join(storeDir, "spec-demo-feature.md")]),
     );
     write("show-checks", suspec(repo, ["show", "checks"]));
+
+    // 5b. the store-resolving loader face (`show <kind> <ref>`) — one capture per kind, the shapes
+    //     suspec_get_artifact relays. The run's frontmatter `worktree:` is the scratch repo path —
+    //     normalized (like `path`/`store`) by the tripwire's structural compare.
+    write("show-spec", suspec(repo, ["show", "spec", "SPEC-demo-feature"]));
+    write("show-run", suspec(repo, ["show", "run", "demo"]));
+    write("show-task", suspec(repo, ["show", "task", "demo-feature"]));
+    write("show-review", suspec(repo, ["show", "review", "demo"]));
+    write("show-finding", suspec(repo, ["show", "finding", "demo"]));
+    write("show-intake", suspec(repo, ["show", "intake", "demo"]));
 
     // 6. the run-vs-spec reconcile — the shape suspec_reconcile consumes (exit 1 here: AC-002 is a gap;
     //    the generator only needs the parseable stdout).

@@ -41,7 +41,9 @@ run a model loop, launch a runner, close a gate, promote a finding, or issue a v
 - **Confined inputs.** File paths are realpath-confined to the bound repo root (no `..`, no absolute
   escapes, no symlink escapes); run/spec/AC ids must be a single safe segment; a spec intent is a bounded,
   flag-free one-liner; the verb _and_ flag are allow-list-checked at the one subprocess edge. The
-  mutation verbs (`work`, `done`, `evidence`, `fix`, `promote`) are not on the allow-list at all.
+  mutation verbs (`work`, `done`, `evidence`, `fix`, `promote`) are not on the allow-list at all, and
+  `store` is pinned to its read face (`list`) — `store migrate`/`gc`/`purge` mutate or delete artifacts
+  and stay CLI-only maintenance.
 - **A typed contract that bends only where it should.** The CLI `--json` shapes are mirrored as a drift
   tripwire (a renamed/dropped field the adapter _reads_ fails a test, not silently-wrong output), but a
   pass-through-only enum (a CLI status class the adapter merely relays) is `z.string()` — a benign additive
@@ -114,12 +116,17 @@ published/files-pruned install with no `src/` always runs `dist/`, which needs N
 
 ## Surface
 
-- **Read tools (5).** Each declares an `outputSchema` and takes a `response_format: concise|detailed` —
-  concise returns the relevant slice, the verbatim payload on demand.
+- **Read tools (6).** Each declares an `outputSchema`; all but the loader take a
+  `response_format: concise|detailed` — concise returns the relevant slice, the verbatim payload on
+  demand (the loader's projection IS the payload, so it has nothing to slice).
   - `suspec_get_status` — the store summary (active/archived artifacts + the `next` attention ranking).
   - `suspec_list` — enumerate the store's artifacts (`suspec store list`) for an agent without a slug.
+  - `suspec_get_artifact` — load ONE store artifact by id/slug via the CLI's store-resolving
+    `suspec show <kind> <ref>` (kind: spec/run/review/task/finding/intake). For a shell-less client
+    this is the only way to read a store artifact at all.
   - `suspec_check_store` — the checks contract as artifact lint over the repo's STORE (`suspec check`).
-  - `suspec_check_file` — the one check path for one repo file (a spec, change-plan, or review packet).
+  - `suspec_check_file` — the one check path for one repo-resident file (a promoted spec, a review
+    packet). Store artifacts are out of its reach; the run/spec chain is linted by `suspec_check_store`.
   - `suspec_get_checks` — the checks contract (version + the core checks).
 - **Reconcile tool (1).** `suspec_reconcile` — reconcile a store `run` against its driving spec
   (`suspec review <RUN>`): artifact lint + the evidence-vs-AC rows (verified / stale / failing /
@@ -141,10 +148,10 @@ published/files-pruned install with no `src/` always runs `dist/`, which needs N
 | --- | --- | --- |
 | `suspec_check_workspace` | → `suspec_check_store` | The workspace tree + workspace verdict are gone (ADR-0137); `suspec check` with no args is now the store lint. |
 | `suspec_reconcile` (task/spec + `base`) | reshaped | `suspec review` now takes a store RUN slug; the diff-vs-task reconcile retired with task packets as repo files. |
-| `suspec_get_task` / `suspec_get_spec` / `suspec_get_review` | retired | The CLI's `show task|spec|review` loaders resolve the workspace tree only and cannot reach the store; agents read store artifacts directly by absolute path (ADR-0137 D2). |
+| `suspec_get_task` / `suspec_get_spec` / `suspec_get_review` | → `suspec_get_artifact` (v0.4.0) | Retired while the CLI's `show` loaders were workspace-tree-bound; the CLI's `show <kind> <ref>` now resolves the STORE (spec/run/review/task/finding/intake by id-or-slug), so the loader face is restored as ONE tool — a shell-less client cannot open `~/.claude/state` paths, so without it store artifacts were unreadable there. |
 | `suspec_scaffold_spec` (slug) | reshaped | Specs scaffold from a one-line INTENT via `suspec write spec` — the one store scaffold. |
 | `suspec_scaffold_finding` | retired | `suspec promote` now opens a GitHub issue and archives the finding — a network mutation, not a scaffold. Findings enter via runs; promotion stays in the CLI with the human. |
-| templated resources (`suspec://tasks/{id}` etc.) | retired | Same store-reachability reason as the `get_*` loaders. |
+| templated resources (`suspec://tasks/{id}` etc.) | retired | Per-artifact reads are served by the `suspec_get_artifact` tool; a second, templated-URI face over the same loader would be duplicate surface. |
 
 ## Develop
 

@@ -42,7 +42,8 @@ describe("real stdio transport (AC-001)", () => {
       expect(tools).toContain("suspec_check_store");
       expect(tools).toContain("suspec_reconcile");
       expect(tools).toContain("suspec_scaffold_spec");
-      expect(tools).toHaveLength(8);
+      expect(tools).toContain("suspec_get_artifact");
+      expect(tools).toHaveLength(9);
 
       const result = (await client.callTool({
         name: "suspec_get_status",

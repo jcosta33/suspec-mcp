@@ -1,9 +1,11 @@
 // The Suspec MCP tool surface — the v2 STORE surface (ADR-0137: artifacts are the agent's transient
 // working memory in `~/.claude/state/<repo>/`, never repo files; no board, no workspace tree, no
 // verdicts). Three tiers, all routed through the no-verdict envelope:
-//   • READ — store projections over the CLI's read `--json` (status, store list, check, show checks).
-//     Each declares an outputSchema and takes a `response_format` (concise|detailed, AC-013):
-//     concise returns the relevant slice, detailed the verbatim payload.
+//   • READ — store projections over the CLI's read `--json` (status, store list, check, show).
+//     The list/lint tools declare an outputSchema and take a `response_format` (concise|detailed,
+//     AC-013): concise returns the relevant slice, detailed the verbatim payload. The loader
+//     (suspec_get_artifact, over the CLI's store-resolving `show <kind> <ref>`) takes no
+//     response_format: its payload IS the artifact projection — there is no noise slice.
 //   • RECONCILE — the single `suspec_reconcile`: one engine (`suspec review <RUN>`), one tool. It
 //     previews exactly what `suspec done` will gate on (artifact lint + evidence-vs-AC rows) without
 //     closing anything; the implementer-vs-reviewer STANCE split lives in the prompts (prompts.ts).
@@ -13,11 +15,13 @@
 //     never adjudicates one). See register_safe_write_tools for the full guarantee.
 //
 // Retired with the v2 pivot (no CLI counterpart): suspec_check_workspace (the workspace verdict is
-// gone — `check` with no args is now the store lint, served by suspec_check_store),
-// suspec_get_task/get_spec/get_review (the `show` loaders are workspace-tree-bound and cannot reach
-// the store; agents read store artifacts directly by absolute path per ADR-0137 D2), and
+// gone — `check` with no args is now the store lint, served by suspec_check_store) and
 // suspec_scaffold_finding (`promote` now opens a GitHub issue and archives the finding — a network
-// mutation, not a scaffold; findings enter via runs and promote via the CLI).
+// mutation, not a scaffold; findings enter via runs and promote via the CLI). The v1 get_task/
+// get_spec/get_review loaders were retired while `show` was workspace-tree-bound; the CLI's `show`
+// now resolves the STORE (spec|run|review|task|finding|intake by id-or-slug), so the loader face is
+// RESTORED as the single suspec_get_artifact — without it a shell-less client (Claude Desktop,
+// Cursor) has no way to read a store artifact at all (it cannot open ~/.claude/state paths).
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -150,11 +154,14 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
     {
       title: "Check one artifact file (spec, review, or change-plan)",
       description:
-        "Run the Suspec checks contract over one file via `suspec check <file>`. Dispatches on the " +
-        "file's frontmatter type: a spec runs the core spec checks, a review packet the C012/C013 " +
-        "review checks, a change-plan the C010/C011 checks. The path is confined to the repo root this " +
-        "server is bound to; store artifacts are linted via suspec_check_store instead. Returns " +
-        "diagnostics, never a verdict.",
+        "Run the Suspec checks contract over one REPO file via `suspec check <file>`. Dispatches on " +
+        "the file's frontmatter type: a spec runs the core spec checks, a review packet the C012/C013 " +
+        "review checks, a change-plan the C010/C011 checks. The path is confined to the repo root " +
+        "this server is bound to, so this reaches repo-resident files only (e.g. a promoted spec). " +
+        "Store artifacts live in the user-level store, out of this tool's reach — the run/spec chain " +
+        "is linted via suspec_check_store; a STORE change-plan (`new change-plan` scaffolds into the " +
+        "store) currently has no MCP lint face (check it via the CLI: `suspec check <store-path>`). " +
+        "Returns diagnostics, never a verdict.",
       inputSchema: {
         path: z.string().describe("repo-relative path to the artifact file"),
         ...responseFormatInput,
@@ -195,6 +202,42 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
         format,
         slice: slice_show_checks,
       });
+    },
+  );
+
+  // The store loader (the restored get_* face): ONE tool over the CLI's store-resolving
+  // `show <kind> <ref>`. For a shell-less client this is the only way to READ a store artifact —
+  // suspec_get_status/suspec_list name the filenames, this loads one. No response_format: the
+  // projection IS the payload (nothing to slice without gutting the tool's purpose).
+  server.registerTool(
+    "suspec_get_artifact",
+    {
+      title: "Load one store artifact (spec, run, review, task, finding, or intake)",
+      description:
+        "Load ONE store artifact by id or slug via the CLI's store-resolving `suspec show <kind> " +
+        "<ref>`: spec/task/review return the parsed projection (a spec's requirements + verify " +
+        "commands and its `## Execution` record; a task's scope; a review packet's coverage rows), " +
+        "run/intake the honest frontmatter+body split, finding its severity/areas/body. Resolves " +
+        "active artifacts first, `archive/` as fallback (a read never resurrects). The ref is an id " +
+        "or slug (e.g. SPEC-auth, or the `run-<slug>.md` stem), never a path — enumerate via " +
+        "suspec_list. Read-only; no verdict.",
+      inputSchema: {
+        kind: z
+          .enum(["spec", "run", "review", "task", "finding", "intake"])
+          .describe("the artifact kind (the `<kind>-*.md` filename prefix in the store)"),
+        ref: z
+          .string()
+          .describe("the artifact's frontmatter id or filename slug (never a path)"),
+      },
+      outputSchema: ENVELOPE_OUTPUT_SHAPE,
+      annotations: READ_ONLY,
+    },
+    ({ kind, ref }) => {
+      // A ref is an id/slug, never a path — same boundary the CLI enforces (is_safe_segment there too).
+      if (!is_safe_segment(ref)) {
+        return tool_error(`invalid ${kind} ref: ${ref}`);
+      }
+      return respond(invoke_suspec(ctx.env, "show", [kind, ref]));
     },
   );
 

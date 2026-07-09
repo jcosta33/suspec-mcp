@@ -31,6 +31,17 @@ describe('invoke_suspec — the subprocess edge', () => {
         }
     });
 
+    it('refuses the MUTATING store subcommands (migrate rewrites artifacts; gc/purge delete them)', () => {
+        // The `store` verb alone is no longer a read guarantee — only `store list` passes the edge.
+        for (const sub of ['migrate', 'gc', 'purge', 'doctor']) {
+            expect(() => invoke_suspec(env(stub), 'store', [sub]), sub).toThrow(
+                /non-allow-listed store subcommand/,
+            );
+        }
+        expect(() => invoke_suspec(env(stub), 'store')).toThrow(/non-allow-listed store subcommand/);
+        expect(invoke_suspec(env(stub), 'store', ['list']).kind).toBe('ok');
+    });
+
     it('always appends --json and never a write flag', () => {
         const r = invoke_suspec(env(stub), 'status');
         expect(r.invocation.command).toMatch(/--json$/);

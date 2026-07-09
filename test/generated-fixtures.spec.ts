@@ -34,12 +34,19 @@ const FIXTURES = [
   "check-store",
   "check-file",
   "show-checks",
+  "show-spec",
+  "show-run",
+  "show-task",
+  "show-review",
+  "show-finding",
+  "show-intake",
   "review-report",
 ];
 
 // Replace the environment-specific values with a stable placeholder so the structural compare is about
 // SHAPE + stable content, not the absolute temp scratch path the generator ran in. In the v2 store
-// shapes, every absolute path travels under a known key (`path` / `spec_path` / `store`).
+// shapes, every absolute path travels under a known key (`path` / `spec_path` / `store`, plus the run
+// record's `worktree:` frontmatter — the scratch repo path — surfaced whole by `show run`).
 function normalize(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(normalize);
@@ -47,7 +54,7 @@ function normalize(value: unknown): unknown {
   if (value !== null && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      if (k === "path" || k === "spec_path" || k === "store") {
+      if (k === "path" || k === "spec_path" || k === "store" || k === "worktree") {
         out[k] = "<volatile>";
       } else {
         out[k] = normalize(v);

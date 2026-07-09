@@ -28,6 +28,13 @@ const ALLOWED_VERBS = new Set([
   "write",
 ]);
 
+// `store` grew mutating subcommands (`migrate` rewrites every artifact's grammar_version, `gc` and
+// `purge` DELETE artifacts) — the verb alone is no longer a read guarantee, so the subcommand is
+// allow-listed too. Only the read faces pass; `migrate`/`gc`/`purge` are store MAINTENANCE the human
+// runs via the CLI (they mutate/delete artifacts — nothing reconcile-only about them), and `doctor`
+// is not consumed by any tool yet, so it is not opened pre-emptively.
+const ALLOWED_STORE_SUBCOMMANDS = new Set(["list"]);
+
 // The ONLY non-`--json` flags suspec-mcp may pass — the verdict-free flags the safe-write tier
 // needs. NOTABLY ABSENT: `--write` / `--force` / `--agent` / `--launch` (every mutation/dispatch
 // flag) — so a safe-write op can only SCAFFOLD a fresh artifact, never overwrite, mutate, or launch.
@@ -76,6 +83,12 @@ export function invoke_suspec(
     // Defense in depth — the tools only ever pass allow-listed verbs; this catches a programming slip.
     throw new Error(
       `suspec-mcp: refusing to invoke a non-allow-listed suspec verb: "${verb}"`,
+    );
+  }
+  if (verb === "store" && !ALLOWED_STORE_SUBCOMMANDS.has(positional[0] ?? "")) {
+    // Same defense in depth, one level down: `store migrate|gc|purge` mutate/delete artifacts.
+    throw new Error(
+      `suspec-mcp: refusing to invoke a non-allow-listed store subcommand: "${positional[0] ?? ""}"`,
     );
   }
   const args = [verb, ...positional];

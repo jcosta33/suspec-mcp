@@ -152,6 +152,88 @@ if (verb === "status") {
       checks: [{ id: "C001", name: "unique-ids", severity: "hard-error" }],
     },
   });
+} else if (verb === "show") {
+  // The store-resolving loader face: `show <kind> <ref>` → ShowResult {level:'clean', kind, value}.
+  // Mirrors the real CLI's per-kind projections (showArtifact.ts): spec/task/review parsed records,
+  // run/intake the frontmatter+body split, finding its severity/areas/body. Unknown ref → the CLI's
+  // structured exit-2 error.
+  const kind = positionals[0];
+  const ref = positionals[1];
+  const KINDS = new Set(["spec", "run", "review", "task", "finding", "intake"]);
+  if (!KINDS.has(kind) || !ref) {
+    process.stdout.write(
+      JSON.stringify({ error: "Usage", message: `usage: suspec show <kind> <id|slug>` }),
+    );
+    process.exit(2);
+  }
+  if (ref === "ghost") {
+    process.stdout.write(
+      JSON.stringify({
+        error: "Usage",
+        message: `cannot resolve ${kind}: ${ref} (looked for ${kind}-*.md in ${store}, archive/ included)`,
+      }),
+    );
+    process.exit(2);
+  }
+  const VALUES = {
+    spec: {
+      frontmatter: { type: "spec", id: "SPEC-x", status: "ready" },
+      requirements: [{ id: "AC-001", line: 14, verifyCommand: "pnpm test" }],
+      sectionTitles: ["Intent", "Requirements"],
+      openQuestionsPresent: false,
+      malformedRequirementHeadings: [],
+      execution: null,
+    },
+    run: {
+      path: join(store, `run-${ref}.md`),
+      archived: false,
+      frontmatter: { type: "run", spec: "SPEC-x", status: "exited" },
+      body: "# Run\n\nagent notes",
+    },
+    review: {
+      status: "draft",
+      sectionTitles: ["Requirement coverage"],
+      coverageRows: [{ id: "AC-001", result: "Pass", evidence: "pnpm test → 0" }],
+      verifyBlocks: [],
+      frontmatter: {
+        status: "draft",
+        spec: "SPEC-x",
+        run: "feat",
+        task: null,
+        pr: null,
+        reviewedSha: null,
+        evidenceHash: null,
+      },
+    },
+    task: {
+      id: "TASK-x",
+      source: "SPEC-x",
+      status: "todo",
+      scope: ["AC-001"],
+      affectedAreas: [],
+      doNotChange: [],
+      claimedChangedFiles: [],
+      embeddedSpecId: null,
+      embeddedRequirements: [],
+    },
+    finding: {
+      path: join(store, `finding-${ref}.md`),
+      archived: false,
+      id: "FINDING-x",
+      title: "a finding",
+      severity: "medium",
+      run: "feat",
+      affectedAreas: ["src/a.ts"],
+      body: "the lesson",
+    },
+    intake: {
+      path: join(store, `intake-${ref}.md`),
+      archived: false,
+      frontmatter: { type: "intake" },
+      body: "raw intake note",
+    },
+  };
+  emit({ level: "clean", kind, value: VALUES[kind] });
 } else if (verb === "write" && positionals[0] === "spec") {
   // `write spec "<intent>"` — the ONE spec scaffold, store-rooted. Slugs the intent like the CLI.
   const intent = positionals[1];

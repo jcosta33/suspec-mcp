@@ -1,0 +1,17 @@
+{
+  "level": "clean",
+  "kind": "run",
+  "value": {
+    "path": "/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-4YcP2r/state/repo/run-demo.md",
+    "archived": false,
+    "frontmatter": {
+      "type": "run",
+      "spec": "SPEC-demo-feature",
+      "worktree": "/var/folders/y7/vz1x6ntx1qn5qshfvw7090g80000gn/T/suspec-mcp-fixtures-4YcP2r/repo",
+      "branch": "suspec/demo",
+      "status": "exited",
+      "grammar_version": "1"
+    },
+    "body": "# Run\n\nagent notes\n\n## Evidence\n\n| evidence | ac | exit | provenance |\n| --- | --- | --- | --- |\n| 001-git-version | AC-001 | 0 | cli-verified |"
+  }
+}
