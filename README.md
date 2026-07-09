@@ -111,8 +111,10 @@ pnpm install && npm link   # exposes `suspec-mcp` on PATH (runs the TypeScript s
 
 Node: on Node ≥ 22.6 the launcher runs from source whenever `src/index.ts` is present (a source
 checkout — even after `pnpm build`), stripping types at runtime. On older Node it falls back to the
-bundled `dist/` when one exists (run `pnpm build` once), and errors only when neither path can work. A
-published/files-pruned install with no `src/` always runs `dist/`, which needs Node ≥ 18.18.
+bundled `dist/` when one exists (run `pnpm build` once), and errors only when neither path can work.
+The supported floor is `engines.node >= 22.6` (package.json — the test suite and source launch need
+it); the bundle itself is built for Node ≥ 18.18, but installing on anything below 22.6 is
+unsupported and warns at install time.
 
 ## Surface
 
@@ -143,7 +145,7 @@ published/files-pruned install with no `src/` always runs `dist/`, which needs N
   (only fresh cli-verified capture counts). The before-done / review-assistant asymmetry is deliberate:
   no prompt grants verdict authority.
 
-### Retired with the v2 pivot (v0.3.0)
+### Retired with the v2 pivot (v0.3.0; the loader face restored as `suspec_get_artifact` in v0.4.0)
 
 | v1 tool | Fate | Why |
 | --- | --- | --- |
