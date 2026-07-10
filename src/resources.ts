@@ -1,8 +1,6 @@
-// The application-driven context surface, v2 (ADR-0137). Fixed URIs only: the repo binding + store
-// summary, and the checks contract. The v1 templated artifact resources (tasks/specs/reviews/findings)
-// stay retired: per-artifact READS are served by the suspec_get_artifact tool (over the CLI's
-// store-resolving `show <kind> <ref>`), and the store summary here carries every artifact's filename —
-// a second, templated-URI face over the same loader would be duplicate surface. All read-only.
+// The application-driven context surface: ONE fixed URI — the checks contract, served from the same
+// allow-listed `suspec check --contract` invocation the suspec_get_checks tool uses (so keeping it
+// costs nothing and it can never drift from the tool). Read-only.
 
 import {
   McpServer,
@@ -26,59 +24,12 @@ function body_of(result: SuspecResult): string {
 
 export function register_resources(server: McpServer, ctx: Ctx): void {
   server.registerResource(
-    "workspace",
-    "suspec://workspace",
-    {
-      title: "Suspec repo binding",
-      description:
-        "The repo root this server is bound to, its mode, and the current store summary.",
-      mimeType: JSON_MIME,
-    },
-    (uri) => {
-      const status = invoke_suspec(ctx.env, "status");
-      const store = status.kind === "ok" ? status.data : null;
-      const text = JSON.stringify(
-        {
-          repoRoot: ctx.root,
-          // The real surface: read + reconcile tools, plus the safe-write scaffold tier
-          // (suspec_scaffold_spec / suspec_split_task). Never a verdict.
-          mode: "read+reconcile+scaffold, no verdict",
-          noVerdictIssued: true,
-          store,
-        },
-        null,
-        2,
-      );
-      return { contents: [{ uri: uri.href, mimeType: JSON_MIME, text }] };
-    },
-  );
-
-  server.registerResource(
-    "status",
-    "suspec://status",
-    {
-      title: "Suspec store summary",
-      description:
-        "The store summary — active + archived artifacts and the `next` attention ranking.",
-      mimeType: JSON_MIME,
-    },
-    (uri) => ({
-      contents: [
-        {
-          uri: uri.href,
-          mimeType: JSON_MIME,
-          text: body_of(invoke_suspec(ctx.env, "status")),
-        },
-      ],
-    }),
-  );
-
-  server.registerResource(
     "checks",
     "suspec://checks",
     {
       title: "Checks contract",
-      description: "The checks contract — version + the core checks.",
+      description:
+        "The checks contract — the contract version + every core check's id, name, and severity.",
       mimeType: JSON_MIME,
     },
     (uri) => ({
@@ -86,7 +37,9 @@ export function register_resources(server: McpServer, ctx: Ctx): void {
         {
           uri: uri.href,
           mimeType: JSON_MIME,
-          text: body_of(invoke_suspec(ctx.env, "show", ["checks"])),
+          text: body_of(
+            invoke_suspec(ctx.env, "check", [], { bare: ["--contract"] }),
+          ),
         },
       ],
     }),

@@ -10,11 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import {
-  confine_path,
-  is_safe_segment,
-  is_safe_intent,
-} from "../src/roots.ts";
+import { confine_path } from "../src/roots.ts";
 
 let root: string;
 beforeEach(() => {
@@ -98,42 +94,3 @@ describe("confine_path", () => {
     ).toBeNull();
   });
 });
-
-describe("is_safe_intent", () => {
-  it("accepts a real one-line intent (spaces, punctuation, quotes)", () => {
-    for (const intent of [
-      "add dark mode to settings",
-      "fix the 500 on /api/users when the id is missing",
-      "support `--json` on the export command",
-      "rename the 'Save' button",
-    ]) {
-      expect(is_safe_intent(intent), intent).toBe(true);
-    }
-  });
-  it("rejects empty, oversize, flag-shaped, and control-character intents", () => {
-    expect(is_safe_intent("")).toBe(false);
-    expect(is_safe_intent("x".repeat(301))).toBe(false);
-    expect(is_safe_intent("--launch something")).toBe(false);
-    expect(is_safe_intent("-x")).toBe(false);
-    expect(is_safe_intent("two\nlines")).toBe(false);
-    expect(is_safe_intent(`a${String.fromCharCode(0)}b`)).toBe(false);
-  });
-});
-
-describe("is_safe_segment", () => {
-  it("accepts a plain stem", () => {
-    expect(is_safe_segment("001-app-setup")).toBe(true);
-  });
-  it("rejects separators and traversal", () => {
-    expect(is_safe_segment("a/b")).toBe(false);
-    expect(is_safe_segment("..")).toBe(false);
-    expect(is_safe_segment(".")).toBe(false);
-    expect(is_safe_segment("a b")).toBe(false);
-    expect(is_safe_segment("")).toBe(false);
-  });
-  it("rejects a flag-shaped stem (leading `-`)", () => {
-    expect(is_safe_segment("--help")).toBe(false);
-    expect(is_safe_segment("-base")).toBe(false);
-  });
-});
-

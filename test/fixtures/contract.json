@@ -1,0 +1,95 @@
+{
+  "version": "0.16.0",
+  "checks": [
+    {
+      "id": "C001",
+      "name": "unique-ids",
+      "severity": "hard-error"
+    },
+    {
+      "id": "C002",
+      "name": "duplicate-id",
+      "severity": "hard-error"
+    },
+    {
+      "id": "C003",
+      "name": "verify-with",
+      "severity": "hard-error"
+    },
+    {
+      "id": "C004",
+      "name": "one-strength-word",
+      "severity": "warning"
+    },
+    {
+      "id": "C005",
+      "name": "non-goals-present",
+      "severity": "warning"
+    },
+    {
+      "id": "C006",
+      "name": "open-questions-present",
+      "severity": "warning"
+    },
+    {
+      "id": "C007",
+      "name": "no-tbd-at-ready",
+      "severity": "hard-error"
+    },
+    {
+      "id": "C008",
+      "name": "sources-named",
+      "severity": "warning"
+    },
+    {
+      "id": "C009",
+      "name": "broken-source-link",
+      "severity": "hard-error"
+    },
+    {
+      "id": "C010",
+      "name": "preserves-refs-resolve",
+      "severity": "hard-error"
+    },
+    {
+      "id": "C011",
+      "name": "waves-present",
+      "severity": "warning"
+    },
+    {
+      "id": "C012",
+      "name": "coverage",
+      "severity": "warning"
+    },
+    {
+      "id": "C013",
+      "name": "verify-evidence-binding",
+      "severity": "warning"
+    },
+    {
+      "id": "C014",
+      "name": "do-not-change-touched",
+      "severity": "warning"
+    },
+    {
+      "id": "C015",
+      "name": "citation-resolves",
+      "severity": "warning"
+    },
+    {
+      "id": "C016",
+      "name": "pass-needs-evidence",
+      "severity": "hard-error"
+    },
+    {
+      "id": "C019",
+      "name": "malformed-requirement-heading",
+      "severity": "warning"
+    },
+    {
+      "id": "C020",
+      "name": "unresolvable-ref",
+      "severity": "hard-error"
+    }
+  ]
+}

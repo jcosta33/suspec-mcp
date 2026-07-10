@@ -8,9 +8,8 @@ import { fileURLToPath } from "node:url";
 
 import { create_server } from "../src/server.ts";
 
-// Exercises the resource surface (fixed URIs only in v2 — the templated artifact resources retired
-// with the store pivot) over the in-memory transport, against the stub. STUB_LOG records every
-// subprocess argv.
+// Exercises the resource surface — ONE fixed URI, the checks contract — over the in-memory
+// transport, against the stub. STUB_LOG records every subprocess argv.
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 const stubBin = join(fixtures, "stub-suspec.mjs");
 const errorBin = join(fixtures, "error-suspec.mjs"); // always emits a structured CLI error
@@ -63,8 +62,7 @@ const firstText = (r: { contents: { text?: string }[] }): string =>
   r.contents[0]?.text ?? "";
 
 // Symmetric to the tool sweep (server.spec INV-002): no resource body may carry a suspec-mcp-AUTHORED
-// verdict key. Resources serve the CLI's data verbatim (only `workspace` wraps it, adding
-// noVerdictIssued) — so no forbidden key should appear.
+// verdict key. The resource serves the CLI's data verbatim, so no forbidden key should appear.
 const FORBIDDEN_VERDICT_KEYS = [
   "verdict",
   "pass",
@@ -87,19 +85,33 @@ function collect_keys(obj: unknown, acc: string[] = []): string[] {
 }
 
 describe("suspec-mcp resources", () => {
-  it("lists the fixed resources and NO templated artifact resource (retired with the store pivot)", async () => {
+  it("lists exactly the checks-contract resource and no templated resource", async () => {
     const { client, close } = await connect();
     try {
       const fixed = (await client.listResources()).resources
         .map((r) => r.uri)
         .sort();
-      expect(fixed).toEqual([
-        "suspec://checks",
-        "suspec://status",
-        "suspec://workspace",
-      ]);
+      expect(fixed).toEqual(["suspec://checks"]);
       const templates = (await client.listResourceTemplates()).resourceTemplates;
       expect(templates).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+
+  it("reads the checks contract via `check --contract` — a read verb only, never anything else", async () => {
+    const { client, close } = await connect();
+    try {
+      const text = firstText(
+        await client.readResource({ uri: "suspec://checks" }),
+      );
+      const parsed = JSON.parse(text) as {
+        version: string;
+        checks: { id: string }[];
+      };
+      expect(parsed.version).toBe("0.16.0");
+      expect(parsed.checks.length).toBeGreaterThan(0);
+      expect(invocations()).toEqual([["check", "--contract", "--json"]]);
     } finally {
       await close();
     }
@@ -108,44 +120,15 @@ describe("suspec-mcp resources", () => {
   it("no resource body carries a suspec-mcp-authored verdict key (INV-002, symmetric to the tool sweep)", async () => {
     const { client, close } = await connect();
     try {
-      for (const uri of [
-        "suspec://workspace",
-        "suspec://status",
-        "suspec://checks",
-      ]) {
-        const text = firstText(await client.readResource({ uri }));
-        const keys = collect_keys(JSON.parse(text));
-        for (const forbidden of FORBIDDEN_VERDICT_KEYS) {
-          expect(
-            keys,
-            `${uri} must not author a "${forbidden}" key`,
-          ).not.toContain(forbidden);
-        }
-      }
-    } finally {
-      await close();
-    }
-  });
-
-  it("reads the fixed resources (workspace / status / checks)", async () => {
-    const { client, close } = await connect();
-    try {
-      const workspace = firstText(
-        await client.readResource({ uri: "suspec://workspace" }),
+      const text = firstText(
+        await client.readResource({ uri: "suspec://checks" }),
       );
-      expect(workspace).toContain('"mode": "read+reconcile+scaffold, no verdict"');
-      // the binding names the repo root + carries the store summary
-      expect(workspace).toContain('"repoRoot"');
-      expect(workspace).toContain("run-feat.md");
-      expect(
-        firstText(await client.readResource({ uri: "suspec://status" })),
-      ).toContain('"next"');
-      expect(
-        firstText(await client.readResource({ uri: "suspec://checks" })),
-      ).toContain('"version"');
-      // only read verbs ran (status / show checks) — never a mutation
-      for (const argv of invocations()) {
-        expect(["status", "show"]).toContain(argv[0]);
+      const keys = collect_keys(JSON.parse(text));
+      for (const forbidden of FORBIDDEN_VERDICT_KEYS) {
+        expect(
+          keys,
+          `suspec://checks must not author a "${forbidden}" key`,
+        ).not.toContain(forbidden);
       }
     } finally {
       await close();
@@ -156,7 +139,7 @@ describe("suspec-mcp resources", () => {
     const { client, close } = await connect(errorBin);
     try {
       const text = firstText(
-        await client.readResource({ uri: "suspec://status" }),
+        await client.readResource({ uri: "suspec://checks" }),
       );
       expect(text).toContain("simulated structured error");
     } finally {
@@ -168,24 +151,10 @@ describe("suspec-mcp resources", () => {
     const { client, close } = await connect(nonjsonBin);
     try {
       const text = firstText(
-        await client.readResource({ uri: "suspec://status" }),
+        await client.readResource({ uri: "suspec://checks" }),
       );
       expect(text).toMatch(/"error": ?"adapter"/);
       expect(text).toMatch(/no parseable JSON/);
-    } finally {
-      await close();
-    }
-  });
-
-  it("the workspace resource degrades to store:null when the CLI errors (never a thrown read)", async () => {
-    const { client, close } = await connect(errorBin);
-    try {
-      const text = firstText(
-        await client.readResource({ uri: "suspec://workspace" }),
-      );
-      const parsed = JSON.parse(text) as { store: unknown; noVerdictIssued: boolean };
-      expect(parsed.store).toBeNull();
-      expect(parsed.noVerdictIssued).toBe(true);
     } finally {
       await close();
     }

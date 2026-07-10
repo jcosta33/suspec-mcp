@@ -3,49 +3,9 @@ import { describe, it, expect } from "vitest";
 import { build_envelope, respond, tool_error } from "../src/envelope.ts";
 import type { SuspecResult } from "../src/suspec/invoke.ts";
 
-// A CONTROLLED run review for the derive-logic test (deterministic, independent of any captured
-// fixture — the captured-output drift tripwire lives in contract.spec.ts).
-const reviewData = {
-  level: "warning",
-  runSlug: "demo",
-  specId: "SPEC-demo",
-  lint: [
-    { path: "/store/run-demo.md", diagnostics: [] },
-    {
-      path: "/store/spec-demo.md",
-      diagnostics: [
-        {
-          check: "C004",
-          severity: "warning",
-          message: "requirement AC-001 uses two strength words",
-        },
-      ],
-    },
-  ],
-  evidence: [
-    {
-      ac: "AC-001",
-      command: "pnpm test",
-      exit: 0,
-      evidenceRef: "001-pnpm-test.md",
-      provenance: "cli-verified",
-      status: "verified",
-    },
-    {
-      ac: "AC-002",
-      command: "`second test`",
-      exit: null,
-      evidenceRef: null,
-      provenance: null,
-      status: "missing",
-    },
-  ],
-  gaps: ["AC-002"],
-};
-
 const okResult = (data: unknown): SuspecResult => ({
   kind: "ok",
-  invocation: { command: "suspec x --json", exitCode: 0 },
+  invocation: { command: "suspec check x.md --json", exitCode: 0 },
   data,
 });
 
@@ -66,180 +26,69 @@ describe("build_envelope", () => {
     }
   });
 
-  it("passes the CLI data through verbatim (including the CLI's own advisory level)", () => {
-    const env = build_envelope(okResult({ level: "blocking", gaps: ["AC-001"] }));
-    expect(env.data).toEqual({ level: "blocking", gaps: ["AC-001"] });
-  });
-
-  it("derives a STRUCTURED human-attention list {category,severity,message,ref} from the run-review facts (AC-010)", () => {
-    const env = build_envelope(okResult(reviewData), "review");
-    const attention = env.derived?.humanAttention ?? [];
-    expect(env.derived?.derivedFrom).toMatch(/run-review facts/);
-    // Each item is a structured object, not a flat string (AC-010): an agent can filter on category/ref
-    // without re-parsing `data`.
-    const gap = attention.find((a) => a.ref === "AC-002");
-    expect(gap).toBeDefined();
-    expect(gap?.category).toBe("evidence-gap");
-    expect(gap?.severity).toBe("warning");
-    // the message carries the row's recorded status + the capture command to close the gap
-    expect(gap?.message).toContain("missing");
-    expect(gap?.message).toContain("suspec evidence add demo --ac AC-002");
-    // the lint diagnostic surfaces by artifact path with its check code
-    const lint = attention.find((a) => a.category === "artifact-lint");
-    expect(lint?.ref).toBe("/store/spec-demo.md");
-    expect(lint?.message).toContain("C004");
-    expect(lint?.severity).toBe("warning");
-    // the verified AC-001 row derives NO attention item (nothing to route)
-    expect(attention.some((a) => a.ref === "AC-001")).toBe(false);
-  });
-
-  it("a hard-error lint diagnostic derives a BLOCKING item; a gap without a matching row reads missing", () => {
-    const blocking = {
-      ...reviewData,
-      level: "blocking",
-      lint: [
-        {
-          path: "/store/evidence/demo/001.md",
-          diagnostics: [
-            {
-              check: "EV01",
-              severity: "hard-error",
-              message: "claims cli-verified but has no capture block",
-            },
-          ],
-        },
-      ],
-      evidence: [],
-      gaps: ["AC-009"], // no evidence row carries AC-009 — the fallback message arm
-    };
-    const att =
-      build_envelope(okResult(blocking), "review").derived?.humanAttention ?? [];
-    const lint = att.find((a) => a.category === "artifact-lint");
-    expect(lint?.severity).toBe("blocking");
-    expect(lint?.message).toContain("EV01");
-    const gap = att.find((a) => a.ref === "AC-009");
-    expect(gap?.message).toContain("missing");
-    // Every item carries the structured quadruple — never a bare string (AC-010).
-    for (const item of att) {
-      expect(["artifact-lint", "evidence-gap"]).toContain(item.category);
-      expect(["blocking", "warning", "info"]).toContain(item.severity);
-      expect(typeof item.message).toBe("string");
-      expect(item.ref === null || typeof item.ref === "string").toBe(true);
-    }
-  });
-
-  it("a store-lint result derives the SAME structured artifact-lint items as a review's lint half", () => {
-    const lintData = {
-      level: "blocking",
-      runCount: 1,
-      specCount: 1,
-      artifacts: [
-        { path: "/store/run-demo.md", diagnostics: [] },
-        {
-          path: "/store/spec-demo.md",
-          diagnostics: [
-            { check: "C007", severity: "hard-error", message: "spec has {{TBD}} placeholders" },
-            { check: "C004", severity: "warning", message: "two strength words" },
-          ],
-        },
-      ],
-    };
-    const env = build_envelope(okResult(lintData), "store-lint");
-    const att = env.derived?.humanAttention ?? [];
-    expect(env.derived?.derivedFrom).toContain("suspec check");
-    expect(att).toHaveLength(2);
-    expect(att[0]).toEqual({
-      category: "artifact-lint",
-      severity: "blocking",
-      message: "C007: spec has {{TBD}} placeholders",
-      ref: "/store/spec-demo.md",
-    });
-    expect(att[1]?.severity).toBe("warning");
-  });
-
-  it("surfaces store-lint shape drift with a note instead of deriving from a bad parse", () => {
-    const env = build_envelope(okResult({ level: "clean" /* artifacts dropped */ }), "store-lint");
-    expect(env.ok).toBe(true);
-    expect(env.derived).toBeUndefined();
-    expect(env.note).toMatch(/store lint output did not match/);
-  });
-
-  it("surfaces a structured CLI no-such-run error as ok:false with the runs-appear-after-work hint", () => {
+  it("passes the CLI data through verbatim (including the CLI's own recorded level)", () => {
     const env = build_envelope(
-      {
-        kind: "structured-error",
-        invocation: { command: "suspec review x --json", exitCode: 2 },
-        error: {
-          error: "store_run_not_found",
-          message: "no run x in the store (searched /store/run-x.md)",
-        },
-      },
-      "review",
+      okResult({ level: "blocking", diagnostics: [{ code: "C016" }] }),
     );
-    expect(env.ok).toBe(false);
-    expect(env.noVerdictIssued).toBe(true);
-    expect(env.note).toMatch(/no such run/i);
-    expect(env.note).toMatch(/suspec work/);
     expect(env.data).toEqual({
-      error: "store_run_not_found",
-      message: "no run x in the store (searched /store/run-x.md)",
+      level: "blocking",
+      diagnostics: [{ code: "C016" }],
     });
   });
 
-  it("gives the same hint for the no-store-yet review error (runs cannot exist without a store)", () => {
-    const env = build_envelope(
-      {
-        kind: "structured-error",
-        invocation: { command: "suspec review x --json", exitCode: 2 },
-        error: {
-          error: "Usage",
-          message:
-            "no store for this repo yet — nothing to review (a run appears after `suspec work`)",
-        },
-      },
-      "review",
-    );
-    expect(env.ok).toBe(false);
-    expect(env.note).toMatch(/no such run/i);
+  it("relays the CLI's exit code verbatim in source (a warnings exit is a fact, not a failure)", () => {
+    const env = build_envelope({
+      kind: "ok",
+      invocation: { command: "suspec check x.md --json", exitCode: 1 },
+      data: { level: "warning", diagnostics: [] },
+    });
+    expect(env.ok).toBe(true);
+    expect(env.source.exitCode).toBe(1);
   });
 
-  it("does NOT mislabel a different review error as the no-run case", () => {
-    const env = build_envelope(
-      {
-        kind: "structured-error",
-        invocation: { command: "suspec review x --json", exitCode: 2 },
-        error: {
-          error: "Usage",
-          message: 'invalid run ref "a/b": expected a run slug, not a path',
-        },
-      },
-      "review",
-    );
-    expect(env.ok).toBe(false);
-    expect(env.note).toBe('invalid run ref "a/b": expected a run slug, not a path'); // the real message, not the hint
-  });
-
-  it("a non-review structured error surfaces its own message verbatim", () => {
+  it("surfaces a structured CLI error as ok:false with the CLI's own message in note", () => {
     const env = build_envelope({
       kind: "structured-error",
-      invocation: { command: "suspec status --json", exitCode: 2 },
-      error: { error: "Usage", message: "something else entirely" },
+      invocation: { command: "suspec check r.md --spec s.md --json", exitCode: 2 },
+      error: {
+        error: "Usage",
+        message:
+          "the review names task `TASK-x`: missing --task — usage: suspec check <review-path> --spec <spec-path> --task <task-path>",
+      },
     });
     expect(env.ok).toBe(false);
-    expect(env.note).toBe("something else entirely");
+    expect(env.noVerdictIssued).toBe(true);
+    expect(env.note).toMatch(/missing --task/);
+    expect(env.data).toEqual({
+      error: "Usage",
+      message:
+        "the review names task `TASK-x`: missing --task — usage: suspec check <review-path> --spec <spec-path> --task <task-path>",
+    });
   });
 
-  it("surfaces shape drift (the tripwire) when a review result does not match RunReviewSchema", () => {
-    // If the CLI's review shape ever drifts, suspec-mcp must NOT silently derive a wrong attention
-    // list — it passes the data through and notes that human-attention could not be derived.
+  it("applies the slice in concise mode only; detailed keeps the verbatim payload", () => {
+    const data = { level: "warning", path: "x.md", diagnostics: [] };
+    const slice = (d: unknown) => ({
+      level: (d as { level: string }).level,
+    });
+    const concise = build_envelope(okResult(data), { format: "concise", slice });
+    expect(concise.data).toEqual({ level: "warning" });
+    expect(concise.responseFormat).toBe("concise");
+    const detailed = build_envelope(okResult(data), { format: "detailed", slice });
+    expect(detailed.data).toEqual(data);
+    expect(detailed.responseFormat).toBe("detailed");
+  });
+
+  it("does NOT slice an error body (surfaced whole, already small)", () => {
     const env = build_envelope(
-      okResult({ totally: "not a run review" }),
-      "review",
+      {
+        kind: "structured-error",
+        invocation: { command: "suspec check x.md --json", exitCode: 2 },
+        error: { error: "Usage", message: "file not found: x.md" },
+      },
+      { format: "concise", slice: () => ({ gutted: true }) },
     );
-    expect(env.ok).toBe(true);
-    expect(env.derived).toBeUndefined();
-    expect(env.note).toMatch(/did not match the expected run-review shape/i);
-    expect(env.data).toEqual({ totally: "not a run review" }); // still passed through verbatim
+    expect(env.data).toEqual({ error: "Usage", message: "file not found: x.md" });
   });
 });
 
@@ -247,7 +96,7 @@ describe("respond", () => {
   it("turns a launch-error into a tool error (isError), not an envelope", () => {
     const result = respond({
       kind: "launch-error",
-      invocation: { command: "suspec status --json", exitCode: 1 },
+      invocation: { command: "suspec check x.md --json", exitCode: 1 },
       message: "could not launch `suspec`",
     });
     expect("isError" in result && result.isError).toBe(true);
@@ -278,14 +127,18 @@ describe("respond", () => {
     }
   });
 
-  it("the review summary text renders the derived attention items with severity/category prefixes", () => {
-    const result = respond(okResult(reviewData), "review");
+  it("the summary text describes runnability, never a result, and carries the error note", () => {
+    const result = respond({
+      kind: "structured-error",
+      invocation: { command: "suspec check r.md --json", exitCode: 2 },
+      error: { error: "Usage", message: "missing --spec" },
+    });
     expect("content" in result).toBe(true);
     if ("content" in result) {
       const summary = result.content[0]?.text ?? "";
-      expect(summary).toContain("need human attention");
-      expect(summary).toContain("[warning/evidence-gap]");
-      expect(summary).toMatch(/no verdict issued/);
+      expect(summary).toContain("not runnable here");
+      expect(summary).toContain("no verdict issued");
+      expect(summary).toContain("missing --spec");
     }
   });
 });

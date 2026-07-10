@@ -1,0 +1,4 @@
+{
+  "error": "Usage",
+  "message": "the review names task `TASK-demo`: missing --task — usage: suspec check <review-path> --spec <spec-path> --task <task-path>"
+}

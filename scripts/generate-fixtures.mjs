@@ -1,24 +1,25 @@
 #!/usr/bin/env node
-// Regenerate the contract fixtures from the REAL `suspec` binary (the v2 STORE surface, ADR-0137). The
-// fixtures in test/fixtures/*.json are the drift tripwire's ground truth: contract.spec.ts parses each
-// through the contract schemas, so a fixture that drifts from reality (or a schema that drifts from the
-// fixture) fails a test instead of suspec-mcp silently producing wrong output. They MUST be generated,
-// not hand-edited — this script is the generator, and test/generated-fixtures.spec.ts re-runs it into a
-// temp dir and asserts the checked-in fixtures still match (so a stale fixture trips CI).
+// Regenerate the contract fixtures from the REAL `suspec` binary (the path-explicit check surface,
+// ADR-0143). The fixtures in test/fixtures/*.json are the drift tripwire's ground truth:
+// contract.spec.ts parses each through the contract schemas, so a fixture that drifts from reality
+// (or a schema that drifts from the fixture) fails a test instead of suspec-mcp silently producing
+// wrong output. They MUST be generated, not hand-edited — this script is the generator, and
+// test/generated-fixtures.spec.ts re-runs it into a temp dir and asserts the checked-in fixtures
+// still match (so a stale fixture trips CI).
 //
-// It builds a deterministic, self-contained scratch REPO + STORE (git init → `write spec` → author a
-// ready 2-AC spec in the store → `new task` → a run record → one real `evidence add` capture) so it can
-// capture EVERY `--json` shape the adapter consumes — including a real run review (verified + missing
-// evidence rows and a gate gap). The store is confined to the scratch dir via SUSPEC_STATE_DIR, so the
-// generator never touches the developer's real ~/.claude/state. The run record is hand-written the same
-// way suspec-cli's own command tests seed one (`work` would dispatch a live runner — not viable here).
+// It builds a deterministic, self-contained scratch dir of artifacts (a spec, a task packet, a
+// task-referencing review — clean and diagnostic-carrying variants) and captures EVERY `--json`
+// shape the adapter consumes: the per-file check report, the unchecked-artifact notice, the checks
+// contract, and the structured error the conditional-companion rule emits. Every path is passed
+// RELATIVE with cwd=scratch, so the captured output is machine-independent (no absolute paths to
+// normalize).
 //
 // Usage:  node scripts/generate-fixtures.mjs [--out <dir>] [--suspec-bin <path>]
 //   --out        where to write the fixtures (default: test/fixtures next to this script's repo)
 //   --suspec-bin the `suspec` binary (default: SUSPEC_BIN env, else any sibling checkout whose
 //                package name is "suspec-cli" — the folder name is irrelevant; see resolve-suspec-bin.mjs)
 
-import { spawnSync, execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
@@ -46,22 +47,14 @@ if (!suspecBin) {
   process.exit(2);
 }
 
-let stateDir; // set in main(); every suspec invocation gets SUSPEC_STATE_DIR so the store stays scratch
-
-// Run `suspec <args> --json` in `cwd`; return the parsed JSON (or throw a clear error). `--json` is the
-// only flag this generator appends — BEFORE any `--` separator (after it, the CLI would record `--json`
-// as part of an `evidence add` command). It never passes a mutation flag the adapter would not.
+// Run `suspec <args> --json` in `cwd`; return the parsed JSON (or throw a clear error). Structured
+// errors (an `{error, message}` body with exit 2) are as much a captured shape as a success report,
+// so the parsed object is returned either way — the caller names what it expects.
 function suspec(cwd, args) {
-  const sep = args.indexOf("--");
-  const argv =
-    sep === -1
-      ? [...args, "--json"]
-      : [...args.slice(0, sep), "--json", ...args.slice(sep)];
-  const res = spawnSync(process.execPath, [suspecBin, ...argv], {
+  const res = spawnSync(process.execPath, [suspecBin, ...args, "--json"], {
     cwd,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
-    env: { ...process.env, SUSPEC_STATE_DIR: stateDir },
   });
   const stdout = (res.stdout ?? "").trim();
   if (stdout.length === 0) {
@@ -72,21 +65,15 @@ function suspec(cwd, args) {
   return JSON.parse(stdout);
 }
 
-function git(cwd, args) {
-  execFileSync("git", args, { cwd, stdio: "pipe" });
-}
-
 function write(name, value) {
   const text = `${JSON.stringify(value, null, 2)}\n`;
   writeFileSync(join(outDir, `${name}.json`), text);
   process.stderr.write(`  wrote ${name}.json\n`);
 }
 
-// A complete, READY spec with two ACs. `write spec` scaffolds a DRAFT skeleton (one empty AC) by
-// design — a hand-authored ready spec lets the real `suspec review` produce genuine evidence rows for
-// two ACs (one verified, one missing → a gate gap). This is still the REAL binary's output over a real
-// store spec — only the spec INPUT is authored here, exactly as an author would after the scaffold.
-const READY_SPEC = [
+// A complete, ready 2-AC spec — the review's always-required companion, and the clean spec-check
+// subject.
+const SPEC = [
   "---",
   "type: spec",
   "id: SPEC-demo-feature",
@@ -102,7 +89,7 @@ const READY_SPEC = [
   "",
   "## Intent",
   "",
-  "Add a demo feature so the fixtures exercise a real store reconcile.",
+  "Add a demo feature so the fixtures exercise a real check.",
   "",
   "## Non-goals",
   "",
@@ -136,153 +123,111 @@ const READY_SPEC = [
   "",
 ].join("\n");
 
+// The task packet the review names — its declared scope keys the review's coverage.
+const TASK = [
+  "---",
+  "type: task",
+  "id: TASK-demo",
+  "source:",
+  "  - SPEC-demo-feature",
+  "scope: [AC-001]",
+  "status: review-ready",
+  "---",
+  "",
+  "# Task",
+  "",
+  "## Run summary",
+  "",
+].join("\n");
+
+// A clean task-keyed review: the Pass row carries evidence and a verify block matching the spec's
+// named command.
+const REVIEW = [
+  "---",
+  "type: review",
+  "id: REVIEW-demo",
+  "task: TASK-demo",
+  "status: needs-human",
+  "---",
+  "",
+  "## Requirement coverage",
+  "",
+  "| ID | Result | Evidence | Human attention |",
+  "|---|---|---|---|",
+  "| AC-001 | Pass | p | no |",
+  "",
+  '```verify id=AC-001 cmd="git --version" result=pass',
+  "ok",
+  "```",
+  "",
+].join("\n");
+
+// A diagnostic-carrying review: a Pass row with an EMPTY Evidence cell and no verify block, so the
+// captured report pins the diagnostic fields (code/severity/message/line) with real check output.
+const REVIEW_BAD = [
+  "---",
+  "type: review",
+  "id: REVIEW-demo",
+  "task: TASK-demo",
+  "status: needs-human",
+  "---",
+  "",
+  "## Requirement coverage",
+  "",
+  "| ID | Result | Evidence | Human attention |",
+  "|---|---|---|---|",
+  "| AC-001 | Pass |  | no |",
+  "",
+].join("\n");
+
 function main() {
   mkdirSync(outDir, { recursive: true });
   const scratch = mkdtempSync(join(tmpdir(), "suspec-mcp-fixtures-"));
   try {
     process.stderr.write(`generating fixtures in ${scratch}\n`);
-    stateDir = join(scratch, "state");
-    const repo = join(scratch, "repo");
-    mkdirSync(repo, { recursive: true });
-    git(repo, ["init", "-q"]);
-    git(repo, ["config", "user.email", "fixtures@suspec.local"]);
-    git(repo, ["config", "user.name", "fixtures"]);
-    writeFileSync(join(repo, "src-file.txt"), "hello\n");
-    git(repo, ["add", "-A"]);
-    git(repo, ["commit", "-qm", "scaffold"]);
+    writeFileSync(join(scratch, "spec-demo.md"), SPEC);
+    writeFileSync(join(scratch, "task-demo.md"), TASK);
+    writeFileSync(join(scratch, "review-demo.md"), REVIEW);
+    writeFileSync(join(scratch, "review-bad.md"), REVIEW_BAD);
 
-    // 1. the SAFE-WRITE tier outputs, captured from the REAL prepare ops: the store spec scaffold and
-    //    the store task slice. (`write spec` resolves the store on first use.)
-    write("write-spec", suspec(repo, ["write", "spec", "demo feature"]));
-    const storeDir = join(stateDir, "repo");
-
-    // 2. author the scaffolded spec into a READY 2-AC spec (see READY_SPEC above).
-    writeFileSync(join(storeDir, "spec-demo-feature.md"), READY_SPEC);
+    // 1. the per-file check reports: a clean spec, a clean review (both companions), and a
+    //    diagnostic-carrying review.
+    write("check-spec", suspec(scratch, ["check", "spec-demo.md"]));
     write(
-      "new-task",
-      suspec(repo, [
-        "new",
-        "task",
-        "--from",
-        "SPEC-demo-feature",
-        "--scope",
-        "AC-001",
+      "check-review",
+      suspec(scratch, [
+        "check",
+        "review-demo.md",
+        "--spec",
+        "spec-demo.md",
+        "--task",
+        "task-demo.md",
+      ]),
+    );
+    write(
+      "check-review-diagnostics",
+      suspec(scratch, [
+        "check",
+        "review-bad.md",
+        "--spec",
+        "spec-demo.md",
+        "--task",
+        "task-demo.md",
       ]),
     );
 
-    // 3. a run record for the spec — hand-seeded the way suspec-cli's own done/review tests seed one
-    //    (`suspec work` dispatches a live runner, which a fixture generator cannot). The worktree points
-    //    at the scratch repo so `evidence add` has a real place to run its command.
-    writeFileSync(
-      join(storeDir, "run-demo.md"),
-      [
-        "---",
-        "type: run",
-        "spec: SPEC-demo-feature",
-        `worktree: ${repo}`,
-        "branch: suspec/demo",
-        "status: exited",
-        "---",
-        "",
-        "# Run",
-        "",
-        "agent notes",
-        "",
-      ].join("\n"),
-    );
+    // 2. an artifact whose type has no check face — the unchecked notice.
+    write("check-unchecked", suspec(scratch, ["check", "task-demo.md"]));
 
-    // 4. ONE real cli-verified evidence capture (AC-001) — so the review fixture carries a `verified`
-    //    row with a capture-backed record, alongside AC-002's `missing` row (a genuine gate gap).
-    suspec(repo, [
-      "evidence",
-      "add",
-      "demo",
-      "--ac",
-      "AC-001",
-      "--",
-      "git",
-      "--version",
-    ]);
+    // 3. the checks contract.
+    write("contract", suspec(scratch, ["check", "--contract"]));
 
-    // 4b. a review packet, a finding, and an intake note — hand-seeded (stable content) the way the
-    //     run record is, so the store-resolving `show <kind> <ref>` loader face has one artifact of
-    //     every kind to project. The CLI never scaffolds these three (reviews/findings are agent-
-    //     authored, intake is `pull`-captured), so seeding is the only deterministic source.
-    writeFileSync(
-      join(storeDir, "review-demo.md"),
-      [
-        "---",
-        "type: review",
-        "status: draft",
-        "spec: SPEC-demo-feature",
-        "run: demo",
-        "---",
-        "",
-        "# Review — demo",
-        "",
-        "## Requirement coverage",
-        "",
-        "| ID | Result | Evidence | Human attention |",
-        "| --- | --- | --- | --- |",
-        "| AC-001 | Pass | git --version → exit 0 | none |",
-        "",
-      ].join("\n"),
-    );
-    writeFileSync(
-      join(storeDir, "finding-demo.md"),
-      [
-        "---",
-        "type: finding",
-        "id: FINDING-demo",
-        "severity: medium",
-        "run: demo",
-        "affected_areas:",
-        "  - src-file.txt",
-        "---",
-        "",
-        "# A demo finding",
-        "",
-        "The durable lesson this run taught.",
-        "",
-      ].join("\n"),
-    );
-    writeFileSync(
-      join(storeDir, "intake-demo.md"),
-      [
-        "---",
-        "type: intake",
-        "---",
-        "",
-        "# Intake — demo",
-        "",
-        "A raw captured request.",
-        "",
-      ].join("\n"),
-    );
-
-    // 5. the READ-tier outputs.
-    write("status", suspec(repo, ["status"]));
-    write("store-list", suspec(repo, ["store", "list"]));
-    write("check-store", suspec(repo, ["check"]));
+    // 4. the structured error the conditional-companion rule emits: the review names a task, but no
+    //    --task is handed — the CLI refuses (exit 2) instead of silently checking less.
     write(
-      "check-file",
-      suspec(repo, ["check", join(storeDir, "spec-demo-feature.md")]),
+      "error-missing-task",
+      suspec(scratch, ["check", "review-demo.md", "--spec", "spec-demo.md"]),
     );
-    write("show-checks", suspec(repo, ["show", "checks"]));
-
-    // 5b. the store-resolving loader face (`show <kind> <ref>`) — one capture per kind, the shapes
-    //     suspec_get_artifact relays. The run's frontmatter `worktree:` is the scratch repo path —
-    //     normalized (like `path`/`store`) by the tripwire's structural compare.
-    write("show-spec", suspec(repo, ["show", "spec", "SPEC-demo-feature"]));
-    write("show-run", suspec(repo, ["show", "run", "demo"]));
-    write("show-task", suspec(repo, ["show", "task", "demo-feature"]));
-    write("show-review", suspec(repo, ["show", "review", "demo"]));
-    write("show-finding", suspec(repo, ["show", "finding", "demo"]));
-    write("show-intake", suspec(repo, ["show", "intake", "demo"]));
-
-    // 6. the run-vs-spec reconcile — the shape suspec_reconcile consumes (exit 1 here: AC-002 is a gap;
-    //    the generator only needs the parseable stdout).
-    write("review-report", suspec(repo, ["review", "demo"]));
 
     process.stderr.write(`done. fixtures in ${outDir}\n`);
   } finally {

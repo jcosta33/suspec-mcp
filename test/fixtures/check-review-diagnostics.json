@@ -1,0 +1,18 @@
+{
+  "path": "review-bad.md",
+  "level": "blocking",
+  "diagnostics": [
+    {
+      "code": "C013",
+      "severity": "warning",
+      "message": "coverage row AC-001 is Pass with only a free-form Evidence cell (advisory — add a `verify` block to machine-confirm, or leave as-is to route to human attention)",
+      "line": null
+    },
+    {
+      "code": "C016",
+      "severity": "hard-error",
+      "message": "coverage row AC-001 is Pass with an empty Evidence cell — a Pass needs pasted output, a CI link, or a named manual observation (an empty cell reads Unverified)",
+      "line": null
+    }
+  ]
+}

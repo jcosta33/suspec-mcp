@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// AC-001 — the server actually starts and serves over REAL stdio (not just the in-memory transport).
+// The server actually starts and serves over REAL stdio (not just the in-memory transport).
 // Deterministic: the spawned server is pointed at the stub `suspec` binary and a temp workspace.
 const here = dirname(fileURLToPath(import.meta.url));
 const serverEntry = join(here, "..", "src", "index.ts");
@@ -16,12 +16,15 @@ let root: string;
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "suspec-mcp-stdio-"));
   mkdirSync(join(root, "specs"), { recursive: true });
-  writeFileSync(join(root, "specs", "x.md"), "# x");
+  writeFileSync(
+    join(root, "specs", "x.md"),
+    "---\ntype: spec\nid: SPEC-x\n---\n",
+  );
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-describe("real stdio transport (AC-001)", () => {
-  it("spawns the server over stdio, lists tools, and serves a tool call", async () => {
+describe("real stdio transport", () => {
+  it("spawns the server over stdio, lists the two tools, and serves both tool calls", async () => {
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: [
@@ -37,25 +40,32 @@ describe("real stdio transport (AC-001)", () => {
     const client = new Client({ name: "stdio-test", version: "0" });
     await client.connect(transport);
     try {
-      const tools = (await client.listTools()).tools.map((t) => t.name);
-      expect(tools).toContain("suspec_get_status");
-      expect(tools).toContain("suspec_check_store");
-      expect(tools).toContain("suspec_reconcile");
-      expect(tools).toContain("suspec_scaffold_spec");
-      expect(tools).toContain("suspec_get_artifact");
-      expect(tools).toHaveLength(9);
+      const tools = (await client.listTools()).tools.map((t) => t.name).sort();
+      expect(tools).toEqual(["suspec_check_file", "suspec_get_checks"]);
 
-      const result = (await client.callTool({
-        name: "suspec_get_status",
+      const checks = (await client.callTool({
+        name: "suspec_get_checks",
         arguments: {},
       })) as {
         structuredContent: {
           noVerdictIssued: boolean;
-          data: { active: unknown[] };
+          data: { version: string };
         };
       };
-      expect(result.structuredContent.noVerdictIssued).toBe(true);
-      expect(result.structuredContent.data.active.length).toBeGreaterThan(0);
+      expect(checks.structuredContent.noVerdictIssued).toBe(true);
+      expect(checks.structuredContent.data.version).toBe("0.16.0");
+
+      const check = (await client.callTool({
+        name: "suspec_check_file",
+        arguments: { path: "specs/x.md" },
+      })) as {
+        structuredContent: {
+          noVerdictIssued: boolean;
+          data: { diagnostics: unknown[] };
+        };
+      };
+      expect(check.structuredContent.noVerdictIssued).toBe(true);
+      expect(check.structuredContent.data.diagnostics.length).toBeGreaterThan(0);
     } finally {
       await client.close();
     }
