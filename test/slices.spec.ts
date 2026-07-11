@@ -44,6 +44,18 @@ describe("slice_check_file", () => {
     };
     expect(out.diagnostics).toHaveLength(1);
   });
+
+  it("defaults an absent diagnostics list to [] (the as_array fallback) instead of throwing", () => {
+    expect(slice_check_file({ level: "warning" })).toEqual({
+      level: "warning",
+      diagnostics: [],
+    });
+  });
+
+  it("falls back verbatim on an object bearing none of the fields it reads", () => {
+    const drifted = { foo: "bar" };
+    expect(slice_check_file(drifted)).toBe(drifted);
+  });
 });
 
 describe("slice_contract", () => {
@@ -63,5 +75,17 @@ describe("slice_contract", () => {
       checks: unknown[];
     };
     expect(out.checks).toHaveLength(1);
+  });
+
+  it("defaults an absent checks list to [] (the as_array fallback) instead of throwing", () => {
+    expect(slice_contract({ version: "0.16.0" })).toEqual({
+      version: "0.16.0",
+      checks: [],
+    });
+  });
+
+  it("falls back verbatim on an object bearing none of the fields it reads", () => {
+    const drifted = { foo: "bar" };
+    expect(slice_contract(drifted)).toBe(drifted);
   });
 });

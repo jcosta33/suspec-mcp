@@ -44,6 +44,10 @@ function runStub(args: string[]): { data: unknown; exit: number | null } {
       join(dir, "review.md"),
       "---\ntype: review\nid: REVIEW-x\ntask: TASK-x\n---\n\n## Requirement coverage\n",
     );
+    writeFileSync(
+      join(dir, "review-notask.md"),
+      "---\ntype: review\nid: REVIEW-y\n---\n\n## Requirement coverage\n",
+    );
     const res = spawnSync(stubBin, [...args, "--json"], {
       cwd: dir,
       encoding: "utf8",
@@ -130,6 +134,44 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     }
   });
 
+  it("companion flags on a NON-review artifact are a structured error (the flags carry no review)", () => {
+    const parsed = SuspecErrorSchema.safeParse(
+      fixture("error-companions-without-review.json"),
+    );
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.message).toMatch(/carry no review/);
+    }
+  });
+
+  it("a handed companion path missing on disk is a structured error (file not found)", () => {
+    const parsed = SuspecErrorSchema.safeParse(
+      fixture("error-companion-not-found.json"),
+    );
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.message).toMatch(/--spec file not found/);
+    }
+  });
+
+  it("a review checked with NO --spec at all is a structured error (missing --spec)", () => {
+    const parsed = SuspecErrorSchema.safeParse(fixture("error-missing-spec.json"));
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.message).toMatch(/missing --spec/);
+    }
+  });
+
+  it("a --task handed to a review that references none is a structured error (a companion nothing references)", () => {
+    const parsed = SuspecErrorSchema.safeParse(
+      fixture("error-task-not-referenced.json"),
+    );
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.message).toMatch(/companion nothing references/);
+    }
+  });
+
   it("the tripwire FAILS if a consumed field is renamed/dropped (a diagnostic's message; the contract's checks)", () => {
     const report = JSON.parse(
       readFileSync(join(here, "fixtures", "check-review-diagnostics.json"), "utf8"),
@@ -180,6 +222,21 @@ describe("the test stub conforms to the SAME contract as the real captured outpu
     expect(exit).toBe(0);
   });
 
+  it("stub check <task-less review> with only --spec parses clean (exit 0) — the spec-keyed check", () => {
+    const { data, exit } = runStub([
+      "check",
+      "review-notask.md",
+      "--spec",
+      "spec.md",
+    ]);
+    const parsed = CheckReportSchema.safeParse(data);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.level).toBe("clean");
+    }
+    expect(exit).toBe(0);
+  });
+
   it("stub check on a no-check-face type parses against UncheckedArtifactSchema (exit 0)", () => {
     const { data, exit } = runStub(["check", "task.md"]);
     expect(UncheckedArtifactSchema.safeParse(data).success).toBe(true);
@@ -201,6 +258,71 @@ describe("the test stub conforms to the SAME contract as the real captured outpu
       const real = SuspecErrorSchema.parse(fixture("error-missing-task.json"));
       expect(parsed.data.message).toMatch(/the review names task `TASK-x`/);
       expect(real.message).toMatch(/the review names task `TASK-demo`/);
+    }
+    expect(exit).toBe(2);
+  });
+
+  it("stub refuses companion flags on a NON-review artifact exactly like the real CLI (exit 2, same message)", () => {
+    const { data, exit } = runStub(["check", "spec.md", "--spec", "spec.md"]);
+    const parsed = SuspecErrorSchema.safeParse(data);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      const real = SuspecErrorSchema.parse(
+        fixture("error-companions-without-review.json"),
+      );
+      expect(parsed.data.message).toBe(real.message);
+    }
+    expect(exit).toBe(2);
+  });
+
+  it("stub refuses a review checked with NO --spec exactly like the real CLI (exit 2, same message)", () => {
+    const { data, exit } = runStub(["check", "review.md"]);
+    const parsed = SuspecErrorSchema.safeParse(data);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      const real = SuspecErrorSchema.parse(fixture("error-missing-spec.json"));
+      expect(parsed.data.message).toBe(real.message);
+    }
+    expect(exit).toBe(2);
+  });
+
+  it("stub refuses a --task handed to a task-less review exactly like the real CLI (exit 2, same message)", () => {
+    const { data, exit } = runStub([
+      "check",
+      "review-notask.md",
+      "--spec",
+      "spec.md",
+      "--task",
+      "task.md",
+    ]);
+    const parsed = SuspecErrorSchema.safeParse(data);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      const real = SuspecErrorSchema.parse(
+        fixture("error-task-not-referenced.json"),
+      );
+      expect(parsed.data.message).toBe(real.message);
+    }
+    expect(exit).toBe(2);
+  });
+
+  it("stub refuses a companion path missing on disk exactly like the real CLI (exit 2, same message shape)", () => {
+    const { data, exit } = runStub([
+      "check",
+      "review.md",
+      "--spec",
+      "no-such-spec.md",
+      "--task",
+      "task.md",
+    ]);
+    const parsed = SuspecErrorSchema.safeParse(data);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.message).toBe("--spec file not found: no-such-spec.md");
+      const real = SuspecErrorSchema.parse(
+        fixture("error-companion-not-found.json"),
+      );
+      expect(real.message).toMatch(/--spec file not found/);
     }
     expect(exit).toBe(2);
   });

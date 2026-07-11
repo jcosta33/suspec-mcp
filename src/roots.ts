@@ -4,7 +4,7 @@
 // flag, or break the spawn.
 
 import { resolve, isAbsolute, relative, dirname } from "node:path";
-import { realpathSync, existsSync } from "node:fs";
+import { realpathSync, existsSync, lstatSync, readlinkSync } from "node:fs";
 
 // True if the string contains any ASCII control character (NUL … US). A NUL byte throws inside
 // spawnSync; control chars are never part of a valid workspace path. (Checked by code point so
@@ -23,6 +23,48 @@ export function resolve_root(root: string): string {
   return existsSync(root) ? realpathSync(root) : resolve(root);
 }
 
+// True if a filesystem entry exists AT this path without following a final symlink — so a DANGLING
+// symlink (one whose target is missing) counts as present. existsSync would report it absent, since
+// it follows the link to the missing target and cannot distinguish it from a bare not-yet-created path.
+function path_exists(p: string): boolean {
+  try {
+    lstatSync(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Canonicalize an absolute path that may end in not-yet-existing components, resolving EVERY symlink
+// through to its real target — including a dangling symlink, which existsSync/realpathSync silently
+// walk past, leaving its true (possibly out-of-root) target uninspected. Any purely-lexical trailing
+// components are anchored onto the canonicalized existing prefix. Throws on a symlink cycle (hop budget).
+function canonicalize(target: string, hops = 0): string {
+  if (hops > 40) {
+    throw new Error("too many symbolic links");
+  }
+  // Deepest ancestor that has a filesystem entry — a dangling symlink counts (lstat, not stat). An
+  // absolute path always bottoms out at "/", which exists, so this ancestor is guaranteed to exist.
+  let existing = target;
+  while (!path_exists(existing) && dirname(existing) !== existing) {
+    existing = dirname(existing);
+  }
+  const tail = relative(existing, target); // '' when the whole path has an entry
+  let realExisting: string;
+  if (lstatSync(existing).isSymbolicLink()) {
+    // Resolve one hop against the link's own (existing) parent dir, then canonicalize the target so
+    // its REAL location — not the link — is what the lexical tail is anchored onto.
+    const link = readlinkSync(existing);
+    const hop = isAbsolute(link)
+      ? resolve(link)
+      : resolve(realpathSync(dirname(existing)), link);
+    realExisting = canonicalize(hop, hops + 1);
+  } else {
+    realExisting = realpathSync(existing); // real file/dir (symlinks above it resolved too)
+  }
+  return tail === "" ? realExisting : resolve(realExisting, tail);
+}
+
 // Validate a client-supplied path resolves INSIDE the workspace root; return it workspace-RELATIVE
 // (safe to pass to a `suspec` invoked with cwd=root), or null if it escapes. Rejects: control chars (a
 // NUL byte breaks spawn), `..` traversal, absolute escapes, the root itself (not a file), flag-shaped
@@ -36,18 +78,18 @@ export function confine_path(root: string, candidate: string): string | null {
   const resolved = isAbsolute(candidate)
     ? resolve(candidate)
     : resolve(rootReal, candidate);
-  // Canonicalize the deepest EXISTING ancestor through any symlinks, then re-anchor the (possibly
-  // not-yet-existing) leaf onto it BEFORE the inside-root check. This is correct even when the root or
-  // an ancestor is itself reached via a symlink (macOS /tmp, or ~/code -> /data/code): an absolute
-  // in-workspace path is canonicalized rather than lexically rejected for its symlinked prefix (#27).
-  // It still rejects a symlinked ancestor or leaf that points OUTSIDE the root.
-  let existing = resolved;
-  while (!existsSync(existing) && dirname(existing) !== existing) {
-    existing = dirname(existing);
+  // Canonicalize the whole path — resolving every symlink component, including a DANGLING one — then
+  // re-anchor the (possibly not-yet-existing) leaf onto it BEFORE the inside-root check. This is correct
+  // even when the root or an ancestor is itself reached via a symlink (macOS /tmp, or ~/code ->
+  // /data/code): an absolute in-workspace path is canonicalized rather than lexically rejected for its
+  // symlinked prefix (#27). It still rejects a symlinked ancestor or leaf that points OUTSIDE the root,
+  // whether or not that link's target exists yet. Any resolution failure (e.g. a symlink cycle) is fatal.
+  let canonical: string;
+  try {
+    canonical = canonicalize(resolved);
+  } catch {
+    return null;
   }
-  const realExisting = existsSync(existing) ? realpathSync(existing) : existing;
-  const tail = relative(existing, resolved); // '' when the full path already exists
-  const canonical = tail === "" ? realExisting : resolve(realExisting, tail);
   const finalRel = relative(rootReal, canonical);
   if (finalRel.startsWith("..") || isAbsolute(finalRel)) {
     return null; // resolves outside root (a `..`/absolute escape or a symlink pointing out)

@@ -1,0 +1,4 @@
+{
+  "error": "Usage",
+  "message": "--task names a packet but the review references no task (no `task:` frontmatter) — a companion nothing references is a wiring mistake"
+}

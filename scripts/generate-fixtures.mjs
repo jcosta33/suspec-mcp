@@ -162,6 +162,27 @@ const REVIEW = [
   "",
 ].join("\n");
 
+// A task-LESS review (no `task:` frontmatter): the subject for the unreferenced-task refusal — a
+// --task handed to it is a companion nothing references.
+const REVIEW_NOTASK = [
+  "---",
+  "type: review",
+  "id: REVIEW-demo-notask",
+  "status: needs-human",
+  "---",
+  "",
+  "## Requirement coverage",
+  "",
+  "| ID | Result | Evidence | Human attention |",
+  "|---|---|---|---|",
+  "| AC-001 | Pass | p | no |",
+  "",
+  '```verify id=AC-001 cmd="git --version" result=pass',
+  "ok",
+  "```",
+  "",
+].join("\n");
+
 // A diagnostic-carrying review: a Pass row with an EMPTY Evidence cell and no verify block, so the
 // captured report pins the diagnostic fields (code/severity/message/line) with real check output.
 const REVIEW_BAD = [
@@ -188,6 +209,7 @@ function main() {
     writeFileSync(join(scratch, "spec-demo.md"), SPEC);
     writeFileSync(join(scratch, "task-demo.md"), TASK);
     writeFileSync(join(scratch, "review-demo.md"), REVIEW);
+    writeFileSync(join(scratch, "review-notask.md"), REVIEW_NOTASK);
     writeFileSync(join(scratch, "review-bad.md"), REVIEW_BAD);
 
     // 1. the per-file check reports: a clean spec, a clean review (both companions), and a
@@ -227,6 +249,45 @@ function main() {
     write(
       "error-missing-task",
       suspec(scratch, ["check", "review-demo.md", "--spec", "spec-demo.md"]),
+    );
+
+    // 5. the structured error when a companion flag accompanies a NON-review artifact — the
+    //    companion flags belong to a review and nothing else.
+    write(
+      "error-companions-without-review",
+      suspec(scratch, ["check", "spec-demo.md", "--spec", "spec-demo.md"]),
+    );
+
+    // 6. the structured error when a handed companion path does not exist on disk — lexically fine
+    //    (confinement lets a not-yet-existing path through), so the CLI's refusal is the backstop.
+    write(
+      "error-companion-not-found",
+      suspec(scratch, [
+        "check",
+        "review-demo.md",
+        "--spec",
+        "no-such-spec.md",
+        "--task",
+        "task-demo.md",
+      ]),
+    );
+
+    // 7. the structured error when a review is checked with NO --spec at all — the spec is the
+    //    review's always-required companion.
+    write("error-missing-spec", suspec(scratch, ["check", "review-demo.md"]));
+
+    // 8. the structured error when a --task is handed to a review whose frontmatter names no task —
+    //    a companion nothing references is a wiring mistake.
+    write(
+      "error-task-not-referenced",
+      suspec(scratch, [
+        "check",
+        "review-notask.md",
+        "--spec",
+        "spec-demo.md",
+        "--task",
+        "task-demo.md",
+      ]),
     );
 
     process.stderr.write(`done. fixtures in ${outDir}\n`);

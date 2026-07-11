@@ -32,6 +32,10 @@ const FIXTURES = [
   "check-unchecked",
   "contract",
   "error-missing-task",
+  "error-companions-without-review",
+  "error-companion-not-found",
+  "error-missing-spec",
+  "error-task-not-referenced",
 ];
 
 const suspecPresent = suspecBin !== null;

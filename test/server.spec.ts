@@ -262,6 +262,182 @@ describe("suspec-mcp server", () => {
     }
   });
 
+  it("a task-less review checked with only a spec succeeds — the spec-keyed check, no --task in the argv", async () => {
+    const { client, close } = await connectClient();
+    try {
+      const r = (await client.callTool({
+        name: "suspec_check_file",
+        arguments: {
+          path: "reviews/review-notask.md",
+          spec: "specs/a/spec.md",
+        },
+      })) as {
+        structuredContent: { ok: boolean; data: { level: string } };
+      };
+      expect(r.structuredContent.ok).toBe(true);
+      expect(r.structuredContent.data.level).toBe("clean");
+      expect(invocations()).toContainEqual([
+        "check",
+        "reviews/review-notask.md",
+        "--spec",
+        "specs/a/spec.md",
+        "--json",
+      ]);
+    } finally {
+      await close();
+    }
+  });
+
+  it("a review checked with NO spec at all → the CLI's missing --spec refusal surfaces as ok:false", async () => {
+    const { client, close } = await connectClient();
+    try {
+      const r = (await client.callTool({
+        name: "suspec_check_file",
+        arguments: { path: "reviews/review.md" },
+      })) as {
+        isError?: boolean;
+        structuredContent: {
+          ok: boolean;
+          note?: string;
+          source: { exitCode: number };
+        };
+      };
+      // A structured CLI refusal is a FACT for the agent, not a tool error.
+      expect(r.isError).toBeFalsy();
+      expect(r.structuredContent.ok).toBe(false);
+      expect(r.structuredContent.note).toMatch(/missing --spec/);
+      expect(r.structuredContent.source.exitCode).toBe(2);
+    } finally {
+      await close();
+    }
+  });
+
+  it("a companion handed alongside a NON-review artifact → the CLI's carry-no-review refusal surfaces as ok:false", async () => {
+    const { client, close } = await connectClient();
+    try {
+      const r = (await client.callTool({
+        name: "suspec_check_file",
+        arguments: { path: "specs/a/spec.md", spec: "specs/a/spec.md" },
+      })) as {
+        isError?: boolean;
+        structuredContent: {
+          ok: boolean;
+          note?: string;
+          source: { exitCode: number };
+        };
+      };
+      expect(r.isError).toBeFalsy();
+      expect(r.structuredContent.ok).toBe(false);
+      expect(r.structuredContent.note).toMatch(/carry no review/);
+      expect(r.structuredContent.source.exitCode).toBe(2);
+    } finally {
+      await close();
+    }
+  });
+
+  it("a companion path that confines fine but does not exist → the CLI's file-not-found refusal surfaces as ok:false", async () => {
+    const { client, close } = await connectClient();
+    try {
+      const r = (await client.callTool({
+        name: "suspec_check_file",
+        arguments: {
+          path: "reviews/review.md",
+          spec: "specs/a/no-such-spec.md",
+          task: "tasks/task.md",
+        },
+      })) as {
+        isError?: boolean;
+        structuredContent: {
+          ok: boolean;
+          note?: string;
+          source: { exitCode: number };
+        };
+      };
+      expect(r.isError).toBeFalsy();
+      expect(r.structuredContent.ok).toBe(false);
+      expect(r.structuredContent.note).toMatch(/--spec file not found/);
+      expect(r.structuredContent.source.exitCode).toBe(2);
+    } finally {
+      await close();
+    }
+  });
+
+  it("a --task companion that confines fine but does not exist → the CLI's file-not-found refusal surfaces as ok:false", async () => {
+    const { client, close } = await connectClient();
+    try {
+      const r = (await client.callTool({
+        name: "suspec_check_file",
+        arguments: {
+          path: "reviews/review.md",
+          spec: "specs/a/spec.md",
+          task: "tasks/no-such-task.md",
+        },
+      })) as {
+        isError?: boolean;
+        structuredContent: {
+          ok: boolean;
+          note?: string;
+          source: { exitCode: number };
+        };
+      };
+      expect(r.isError).toBeFalsy();
+      expect(r.structuredContent.ok).toBe(false);
+      expect(r.structuredContent.note).toMatch(/--task file not found/);
+      expect(r.structuredContent.source.exitCode).toBe(2);
+    } finally {
+      await close();
+    }
+  });
+
+  it("a PRIMARY path that confines fine but does not exist → the CLI's file-not-found refusal surfaces as ok:false", async () => {
+    const { client, close } = await connectClient();
+    try {
+      const r = (await client.callTool({
+        name: "suspec_check_file",
+        arguments: { path: "specs/does-not-exist.md" },
+      })) as {
+        isError?: boolean;
+        structuredContent: {
+          ok: boolean;
+          note?: string;
+          source: { exitCode: number };
+        };
+      };
+      // Confinement admits a not-yet-existing lexical path — the CLI's refusal is the backstop.
+      expect(r.isError).toBeFalsy();
+      expect(r.structuredContent.ok).toBe(false);
+      expect(r.structuredContent.note).toMatch(/^file not found/);
+      expect(r.structuredContent.source.exitCode).toBe(2);
+    } finally {
+      await close();
+    }
+  });
+
+  it("a PRIMARY path that is a directory → the CLI's not-an-artifact-file refusal surfaces as ok:false, not an adapter crash", async () => {
+    const { client, close } = await connectClient();
+    try {
+      const r = (await client.callTool({
+        name: "suspec_check_file",
+        arguments: { path: "specs" },
+      })) as {
+        isError?: boolean;
+        structuredContent: {
+          ok: boolean;
+          note?: string;
+          source: { exitCode: number };
+        };
+      };
+      expect(r.isError).toBeFalsy();
+      expect(r.structuredContent.ok).toBe(false);
+      expect(r.structuredContent.note).toMatch(
+        /not an artifact file \(it is a directory\)/,
+      );
+      expect(r.structuredContent.source.exitCode).toBe(2);
+    } finally {
+      await close();
+    }
+  });
+
   it("a review that names a task, checked without one → the CLI's blocking refusal surfaces as ok:false (never silently checking less)", async () => {
     const { client, close } = await connectClient();
     try {
@@ -430,6 +606,27 @@ describe("suspec-mcp server", () => {
       expect(conciseLen).toBeLessThan(detailedLen);
       // default == concise byte-for-byte (concise is the default)
       expect(len(dflt.structuredContent.data)).toBe(conciseLen);
+    } finally {
+      await close();
+    }
+  });
+
+  it("check_file's concise slice drops the path echo and line anchors end to end (default format)", async () => {
+    const { client, close } = await connectClient();
+    try {
+      const r = (await client.callTool({
+        name: "suspec_check_file",
+        arguments: { path: "specs/a/spec.md" }, // no response_format → concise
+      })) as {
+        structuredContent: { responseFormat?: string; data: unknown };
+      };
+      expect(r.structuredContent.responseFormat).toBe("concise");
+      // Exact shape: the slice keeps the outcome + each diagnostic's actionable triple and drops
+      // the echoes the stub emits (the report's `path`, the diagnostic's `line: 1`).
+      expect(r.structuredContent.data).toEqual({
+        level: "warning",
+        diagnostics: [{ code: "C004", severity: "warning", message: "demo" }],
+      });
     } finally {
       await close();
     }

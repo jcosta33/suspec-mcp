@@ -4,8 +4,9 @@
 // that no mutation flag was ever passed) and emits JSON to stdout mirroring the real CLI's --json
 // shapes. Like the real CLI, it reads the checked file itself: the kind sniff comes from the file's
 // frontmatter `type:`, and a review packet enforces the companion rules (--spec always; --task iff
-// the review names a `task:`), so the adapter's companion plumbing is exercised end to end.
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+// the review names a `task:`; companions belong to a review and must exist on disk), so the
+// adapter's companion plumbing is exercised end to end.
+import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const argv = process.argv.slice(2);
@@ -69,9 +70,19 @@ if (!file) {
 if (!existsSync(file)) {
   fail(`file not found: ${file}`);
 }
+if (statSync(file).isDirectory()) {
+  fail(`not an artifact file (it is a directory): ${file} — point at the file inside it`);
+}
 const source = readFileSync(file, "utf8");
 const head = source.split(/\r?\n/).slice(0, 12).join("\n");
 const type = /^type:\s*(.+?)\s*$/m.exec(head)?.[1] ?? null;
+
+// The companion flags belong to a review and nothing else, mirrored from the real CLI.
+if (type !== "review" && (flag("--spec") !== undefined || flag("--task") !== undefined)) {
+  fail(
+    "--spec/--task accompany a review packet — the named artifacts carry no review",
+  );
+}
 
 if (type === "review") {
   // The companion rules, mirrored from the real CLI (its messages verbatim).
@@ -79,6 +90,13 @@ if (type === "review") {
     fail(
       "a review packet needs its source spec: missing --spec — usage: suspec check <review-path> --spec <spec-path> [--task <task-path>]",
     );
+  }
+  // A handed companion must exist on disk — checked before the task-reference rules, like the CLI.
+  for (const name of ["--spec", "--task"]) {
+    const companion = flag(name);
+    if (companion !== undefined && !existsSync(companion)) {
+      fail(`${name} file not found: ${companion}`);
+    }
   }
   const taskRef = /^task:\s*(.+?)\s*$/m.exec(head)?.[1];
   const task = flag("--task");

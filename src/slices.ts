@@ -29,6 +29,15 @@ export function slice_check_file(data: unknown): unknown {
   if (check === null) {
     return data;
   }
+  // An object bearing NONE of the fields this slice reads is an unrecognised shape — return it
+  // verbatim rather than fabricate an empty-clean `{diagnostics: []}` projection.
+  if (
+    check.level === undefined &&
+    check.checked === undefined &&
+    check.diagnostics === undefined
+  ) {
+    return data;
+  }
   if (check.checked === false) {
     return { level: check.level, type: check.type, checked: false };
   }
@@ -49,6 +58,10 @@ export function slice_check_file(data: unknown): unknown {
 export function slice_contract(data: unknown): unknown {
   const contract = as_obj(data);
   if (contract === null) {
+    return data;
+  }
+  // Same unrecognised-shape guard as slice_check_file: no known field, no fabricated slice.
+  if (contract.version === undefined && contract.checks === undefined) {
     return data;
   }
   return {

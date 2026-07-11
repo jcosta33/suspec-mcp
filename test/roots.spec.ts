@@ -88,6 +88,48 @@ describe("confine_path", () => {
     }
   });
 
+  it("rejects a DANGLING symlink leaf whose out-of-root target does not exist yet", () => {
+    const outside = realpathSync(
+      mkdtempSync(join(tmpdir(), "suspec-mcp-outside-")),
+    );
+    // The target is NOT written first, so the link dangles: existsSync follows it and reports absent,
+    // which must not be mistaken for a plain not-yet-created in-root path.
+    symlinkSync(join(outside, "secret.md"), join(root, "dangling.md"));
+    try {
+      expect(confine_path(root, "dangling.md")).toBeNull();
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a DANGLING symlinked PARENT dir whose out-of-root target does not exist yet", () => {
+    const outside = realpathSync(
+      mkdtempSync(join(tmpdir(), "suspec-mcp-outside-")),
+    );
+    const missingDir = join(outside, "nope"); // never created — the dir symlink dangles
+    symlinkSync(missingDir, join(root, "danglingdir"));
+    try {
+      expect(confine_path(root, "danglingdir/leaf.md")).toBeNull();
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a symlink cycle instead of looping forever", () => {
+    // a -> b -> a: canonicalization can never bottom out, so it must fail closed.
+    symlinkSync(join(root, "b"), join(root, "a"));
+    symlinkSync(join(root, "a"), join(root, "b"));
+    expect(confine_path(root, "a")).toBeNull();
+  });
+
+  it("accepts an in-root leaf reached through a RELATIVE-target symlink dir", () => {
+    mkdirSync(join(root, "real"), { recursive: true });
+    mkdirSync(join(root, "sub"), { recursive: true });
+    symlinkSync("../real", join(root, "sub", "link")); // relative target, resolves inside root
+    // The leaf does not exist yet; the relative link must resolve to real/new.md, not be rejected.
+    expect(confine_path(root, "sub/link/new.md")).toBe("real/new.md");
+  });
+
   it("rejects a path containing a control character (NUL)", () => {
     expect(
       confine_path(root, `specs/a${String.fromCharCode(0)}/x.md`),

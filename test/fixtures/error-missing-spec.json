@@ -1,0 +1,4 @@
+{
+  "error": "Usage",
+  "message": "a review packet needs its source spec: missing --spec — usage: suspec check <review-path> --spec <spec-path> [--task <task-path>]"
+}

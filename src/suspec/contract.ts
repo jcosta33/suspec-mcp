@@ -34,7 +34,6 @@ export const CheckReportSchema = z
     diagnostics: z.array(CheckDiagnostic),
   })
   .passthrough();
-export type CheckReport = z.infer<typeof CheckReportSchema>;
 
 // An artifact whose frontmatter `type:` has no check face (task, finding, intake, …): the CLI says so
 // cleanly (`checked: false`) instead of running the wrong checks — nothing to validate is not a defect.
@@ -46,7 +45,6 @@ export const UncheckedArtifactSchema = z
     checked: z.literal(false),
   })
   .passthrough();
-export type UncheckedArtifact = z.infer<typeof UncheckedArtifactSchema>;
 
 // What `suspec check <artifact> --json` can emit on a success exit: a check report (spec, review,
 // change-plan) or the unchecked notice.
@@ -54,7 +52,6 @@ export const CheckFileSchema = z.union([
   CheckReportSchema,
   UncheckedArtifactSchema,
 ]);
-export type CheckFile = z.infer<typeof CheckFileSchema>;
 
 // --- suspec check --contract --json → the checks contract ------------------------------------------
 // The contract dump is a bare object (no report wrapper): the contract version + every core check's
@@ -69,11 +66,9 @@ export const ContractSchema = z
     ),
   })
   .passthrough();
-export type Contract = z.infer<typeof ContractSchema>;
 
 // The CLI's structured-error stdout body (`{error, message}` + exit 2) — e.g. a review checked without
 // the companion its frontmatter requires.
 export const SuspecErrorSchema = z
   .object({ error: z.string(), message: z.string() })
   .passthrough();
-export type SuspecError = z.infer<typeof SuspecErrorSchema>;
