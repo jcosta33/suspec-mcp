@@ -45,7 +45,7 @@ async function connectClient(): Promise<{
   client: Client;
   close: () => Promise<void>;
 }> {
-  const server = create_server({ env: { bin: stubBin, cwd: root }, root });
+  const server = create_server({ env: { bin: stubBin, cwd: root } });
   const [clientTransport, serverTransport] =
     InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test", version: "0" });
@@ -109,7 +109,7 @@ beforeEach(() => {
   );
   writeFileSync(
     join(root, "tasks", "task.md"),
-    "---\ntype: task\nid: TASK-x\nscope: [AC-001]\n---\n",
+    "---\ntype: task\nid: TASK-x\nsource:\n  - SPEC-x\nscope: [AC-001]\n---\n",
   );
   logPath = `${root}.log`;
   process.env.STUB_LOG = logPath;
@@ -122,11 +122,20 @@ afterEach(() => {
   }
 });
 
+function artifactPath(path: string): string {
+  return join(root, path);
+}
+
 // The whole tool surface — both tools are read-only, so the full sweep doubles as the no-write sweep.
-const ALL_TOOL_CALLS = [
-  { name: "suspec_check_file", arguments: { path: "specs/a/spec.md" } },
-  { name: "suspec_get_checks", arguments: {} },
-];
+function allToolCalls() {
+  return [
+    {
+      name: "suspec_check_file",
+      arguments: { path: artifactPath("specs/a/spec.md") },
+    },
+    { name: "suspec_get_checks", arguments: {} },
+  ];
+}
 
 describe("suspec-mcp server", () => {
   it("lists EXACTLY the two check tools, the one contract resource, and no prompts capability", async () => {
@@ -139,7 +148,9 @@ describe("suspec-mcp server", () => {
         .sort();
       expect(resources).toEqual(["suspec://checks"]);
       // No prompts are registered, so the server advertises no prompts capability at all.
-      await expect(client.listPrompts()).rejects.toThrow(/Method not found|-32601/);
+      await expect(client.listPrompts()).rejects.toThrow(
+        /Method not found|-32601/,
+      );
     } finally {
       await close();
     }
@@ -148,7 +159,7 @@ describe("suspec-mcp server", () => {
   it("every tool result carries noVerdictIssued:true and adds no verdict field of its own", async () => {
     const { client, close } = await connectClient();
     try {
-      for (const call of ALL_TOOL_CALLS) {
+      for (const call of allToolCalls()) {
         const result = (await client.callTool(call)) as {
           structuredContent?: Record<string, unknown>;
         };
@@ -185,7 +196,7 @@ describe("suspec-mcp server", () => {
     };
     const { client, close } = await connectClient();
     try {
-      for (const call of ALL_TOOL_CALLS) {
+      for (const call of allToolCalls()) {
         const sc = (
           (await client.callTool(call)) as {
             structuredContent?: Record<string, unknown>;
@@ -209,7 +220,10 @@ describe("suspec-mcp server", () => {
     try {
       const r = (await client.callTool({
         name: "suspec_check_file",
-        arguments: { path: "specs/a/spec.md", response_format: "detailed" },
+        arguments: {
+          path: artifactPath("specs/a/spec.md"),
+          response_format: "detailed",
+        },
       })) as {
         structuredContent: {
           ok: boolean;
@@ -217,7 +231,7 @@ describe("suspec-mcp server", () => {
           data: { diagnostics: { code: string }[] };
         };
       };
-      // ok is RUNNABILITY: a warning report ran fine — the findings live in data + the exit code.
+      // ok is RUNNABILITY: a warning report ran fine; diagnostics live in data and the exit code.
       expect(r.structuredContent.ok).toBe(true);
       expect(r.structuredContent.source.exitCode).toBe(1);
       expect(r.structuredContent.data.diagnostics.map((d) => d.code)).toContain(
@@ -225,7 +239,7 @@ describe("suspec-mcp server", () => {
       );
       expect(invocations()).toContainEqual([
         "check",
-        "specs/a/spec.md",
+        artifactPath("specs/a/spec.md"),
         "--json",
       ]);
     } finally {
@@ -239,9 +253,9 @@ describe("suspec-mcp server", () => {
       const r = (await client.callTool({
         name: "suspec_check_file",
         arguments: {
-          path: "reviews/review.md",
-          spec: "specs/a/spec.md",
-          task: "tasks/task.md",
+          path: artifactPath("reviews/review.md"),
+          spec: artifactPath("specs/a/spec.md"),
+          task: artifactPath("tasks/task.md"),
         },
       })) as {
         structuredContent: { ok: boolean; data: { level: string } };
@@ -250,13 +264,205 @@ describe("suspec-mcp server", () => {
       expect(r.structuredContent.data.level).toBe("clean");
       expect(invocations()).toContainEqual([
         "check",
-        "reviews/review.md",
+        artifactPath("reviews/review.md"),
         "--spec",
-        "specs/a/spec.md",
+        artifactPath("specs/a/spec.md"),
         "--task",
-        "tasks/task.md",
+        artifactPath("tasks/task.md"),
         "--json",
       ]);
+    } finally {
+      await close();
+    }
+  });
+
+  it("surfaces malformed task companions as the CLI's blocking structured errors", async () => {
+    const malformed = [
+      {
+        name: "not-a-task.md",
+        source: "---\ntype: spec\nid: TASK-x\n---\n",
+        message: /must have `type: task`/,
+      },
+      {
+        name: "scope-less.md",
+        source: "---\ntype: task\nid: TASK-x\nsource:\n  - SPEC-x\n---\n",
+        message: /at least one requirement in `scope:`/,
+      },
+      {
+        name: "wrong-source.md",
+        source:
+          "---\ntype: task\nid: TASK-x\nsource:\n  - SPEC-other\nscope: [AC-001]\n---\n",
+        message: /does not name handed spec `SPEC-x`/,
+      },
+    ];
+    const { client, close } = await connectClient();
+    try {
+      for (const item of malformed) {
+        const task = artifactPath(`tasks/${item.name}`);
+        writeFileSync(task, item.source);
+        const result = (await client.callTool({
+          name: "suspec_check_file",
+          arguments: {
+            path: artifactPath("reviews/review.md"),
+            spec: artifactPath("specs/a/spec.md"),
+            task,
+          },
+        })) as {
+          structuredContent: {
+            ok: boolean;
+            note: string;
+            source: { exitCode: number };
+          };
+        };
+        expect(result.structuredContent.ok).toBe(false);
+        expect(result.structuredContent.source.exitCode).toBe(2);
+        expect(result.structuredContent.note).toMatch(item.message);
+      }
+    } finally {
+      await close();
+    }
+  });
+
+  it("surfaces a non-spec --spec companion as the CLI's blocking structured error", async () => {
+    const invalidSpec = artifactPath("specs/a/not-a-spec.md");
+    writeFileSync(invalidSpec, "---\ntype: task\nid: SPEC-x\n---\n");
+    const { client, close } = await connectClient();
+    try {
+      const result = (await client.callTool({
+        name: "suspec_check_file",
+        arguments: {
+          path: artifactPath("reviews/review.md"),
+          spec: invalidSpec,
+          task: artifactPath("tasks/task.md"),
+        },
+      })) as {
+        structuredContent: {
+          ok: boolean;
+          note: string;
+          source: { exitCode: number };
+        };
+      };
+      expect(result.structuredContent.ok).toBe(false);
+      expect(result.structuredContent.source.exitCode).toBe(2);
+      expect(result.structuredContent.note).toMatch(/must have `type: spec`/);
+    } finally {
+      await close();
+    }
+  });
+
+  it("rejects list-shaped singular review and companion fields", async () => {
+    const cases = [
+      {
+        name: "review-task-list",
+        review:
+          "---\ntype: review\nid: REVIEW-x\ntask:\n  - TASK-x\n  - TASK-other\n---\n\n## Requirement coverage\n",
+        spec: "---\ntype: spec\nid: SPEC-x\n---\n",
+        task: "---\ntype: task\nid: TASK-x\nsource:\n  - SPEC-x\nscope: [AC-001]\n---\n",
+        message: /review `task:` must be a single scalar/,
+      },
+      {
+        name: "spec-type-list",
+        review: readFileSync(artifactPath("reviews/review.md"), "utf8"),
+        spec: "---\ntype:\n  - spec\n  - task\nid: SPEC-x\n---\n",
+        task: readFileSync(artifactPath("tasks/task.md"), "utf8"),
+        message: /--spec `type:` must be a single scalar/,
+      },
+      {
+        name: "spec-id-list",
+        review: readFileSync(artifactPath("reviews/review.md"), "utf8"),
+        spec: "---\ntype: spec\nid:\n  - SPEC-x\n  - SPEC-other\n---\n",
+        task: readFileSync(artifactPath("tasks/task.md"), "utf8"),
+        message: /--spec `id:` must be a single scalar/,
+      },
+      {
+        name: "task-type-list",
+        review: readFileSync(artifactPath("reviews/review.md"), "utf8"),
+        spec: readFileSync(artifactPath("specs/a/spec.md"), "utf8"),
+        task: "---\ntype:\n  - task\n  - review\nid: TASK-x\nsource:\n  - SPEC-x\nscope: [AC-001]\n---\n",
+        message: /--task `type:` must be a single scalar/,
+      },
+      {
+        name: "task-id-list",
+        review: readFileSync(artifactPath("reviews/review.md"), "utf8"),
+        spec: readFileSync(artifactPath("specs/a/spec.md"), "utf8"),
+        task: "---\ntype: task\nid:\n  - TASK-x\n  - TASK-other\nsource:\n  - SPEC-x\nscope: [AC-001]\n---\n",
+        message: /--task `id:` must be a single scalar/,
+      },
+    ];
+    const { client, close } = await connectClient();
+    try {
+      for (const item of cases) {
+        const review = artifactPath(`reviews/${item.name}.md`);
+        const spec = artifactPath(`specs/a/${item.name}.md`);
+        const task = artifactPath(`tasks/${item.name}.md`);
+        writeFileSync(review, item.review);
+        writeFileSync(spec, item.spec);
+        writeFileSync(task, item.task);
+        const result = (await client.callTool({
+          name: "suspec_check_file",
+          arguments: { path: review, spec, task },
+        })) as { structuredContent: { ok: boolean; note: string } };
+        expect(result.structuredContent.ok).toBe(false);
+        expect(result.structuredContent.note).toMatch(item.message);
+      }
+    } finally {
+      await close();
+    }
+  });
+
+  it("recognizes quoted and BOM-prefixed review types before applying companion rules", async () => {
+    const variants = [
+      '---\ntype: "review"\nid: REVIEW-quoted\n---\n',
+      "\ufeff---\ntype: review\nid: REVIEW-bom\n---\n",
+    ];
+    const { client, close } = await connectClient();
+    try {
+      for (const [index, source] of variants.entries()) {
+        const review = artifactPath(`reviews/normalized-${index}.md`);
+        writeFileSync(review, source);
+        const result = (await client.callTool({
+          name: "suspec_check_file",
+          arguments: { path: review },
+        })) as { structuredContent: { ok: boolean; note: string } };
+        expect(result.structuredContent.ok).toBe(false);
+        expect(result.structuredContent.note).toMatch(/missing --spec/);
+      }
+    } finally {
+      await close();
+    }
+  });
+
+  it("surfaces C020 when the review task ref does not match the handed task id", async () => {
+    const taskVariants = [
+      "---\ntype: task\nid: TASK-other\nsource:\n  - SPEC-x\nscope: [AC-001]\n---\n",
+      "---\ntype: task\nid: [TASK-x, TASK-other]\nsource:\n  - SPEC-x\nscope: [AC-001]\n---\n",
+    ];
+    const { client, close } = await connectClient();
+    try {
+      for (const [index, source] of taskVariants.entries()) {
+        const task = artifactPath(`tasks/mismatch-${index}.md`);
+        writeFileSync(task, source);
+        const result = (await client.callTool({
+          name: "suspec_check_file",
+          arguments: {
+            path: artifactPath("reviews/review.md"),
+            spec: artifactPath("specs/a/spec.md"),
+            task,
+          },
+        })) as {
+          structuredContent: {
+            ok: boolean;
+            source: { exitCode: number };
+            data: { level: string; diagnostics: { code: string }[] };
+          };
+        };
+        expect(result.structuredContent.ok).toBe(true);
+        expect(result.structuredContent.source.exitCode).toBe(2);
+        expect(result.structuredContent.data.level).toBe("blocking");
+        expect(
+          result.structuredContent.data.diagnostics.map((item) => item.code),
+        ).toContain("C020");
+      }
     } finally {
       await close();
     }
@@ -268,8 +474,8 @@ describe("suspec-mcp server", () => {
       const r = (await client.callTool({
         name: "suspec_check_file",
         arguments: {
-          path: "reviews/review-notask.md",
-          spec: "specs/a/spec.md",
+          path: artifactPath("reviews/review-notask.md"),
+          spec: artifactPath("specs/a/spec.md"),
         },
       })) as {
         structuredContent: { ok: boolean; data: { level: string } };
@@ -278,9 +484,9 @@ describe("suspec-mcp server", () => {
       expect(r.structuredContent.data.level).toBe("clean");
       expect(invocations()).toContainEqual([
         "check",
-        "reviews/review-notask.md",
+        artifactPath("reviews/review-notask.md"),
         "--spec",
-        "specs/a/spec.md",
+        artifactPath("specs/a/spec.md"),
         "--json",
       ]);
     } finally {
@@ -293,7 +499,7 @@ describe("suspec-mcp server", () => {
     try {
       const r = (await client.callTool({
         name: "suspec_check_file",
-        arguments: { path: "reviews/review.md" },
+        arguments: { path: artifactPath("reviews/review.md") },
       })) as {
         isError?: boolean;
         structuredContent: {
@@ -317,7 +523,10 @@ describe("suspec-mcp server", () => {
     try {
       const r = (await client.callTool({
         name: "suspec_check_file",
-        arguments: { path: "specs/a/spec.md", spec: "specs/a/spec.md" },
+        arguments: {
+          path: artifactPath("specs/a/spec.md"),
+          spec: artifactPath("specs/a/spec.md"),
+        },
       })) as {
         isError?: boolean;
         structuredContent: {
@@ -335,15 +544,15 @@ describe("suspec-mcp server", () => {
     }
   });
 
-  it("a companion path that confines fine but does not exist → the CLI's file-not-found refusal surfaces as ok:false", async () => {
+  it("a companion full path that does not exist → the CLI's file-not-found refusal surfaces as ok:false", async () => {
     const { client, close } = await connectClient();
     try {
       const r = (await client.callTool({
         name: "suspec_check_file",
         arguments: {
-          path: "reviews/review.md",
-          spec: "specs/a/no-such-spec.md",
-          task: "tasks/task.md",
+          path: artifactPath("reviews/review.md"),
+          spec: artifactPath("specs/a/no-such-spec.md"),
+          task: artifactPath("tasks/task.md"),
         },
       })) as {
         isError?: boolean;
@@ -362,15 +571,15 @@ describe("suspec-mcp server", () => {
     }
   });
 
-  it("a --task companion that confines fine but does not exist → the CLI's file-not-found refusal surfaces as ok:false", async () => {
+  it("a --task full path that does not exist → the CLI's file-not-found refusal surfaces as ok:false", async () => {
     const { client, close } = await connectClient();
     try {
       const r = (await client.callTool({
         name: "suspec_check_file",
         arguments: {
-          path: "reviews/review.md",
-          spec: "specs/a/spec.md",
-          task: "tasks/no-such-task.md",
+          path: artifactPath("reviews/review.md"),
+          spec: artifactPath("specs/a/spec.md"),
+          task: artifactPath("tasks/no-such-task.md"),
         },
       })) as {
         isError?: boolean;
@@ -389,12 +598,12 @@ describe("suspec-mcp server", () => {
     }
   });
 
-  it("a PRIMARY path that confines fine but does not exist → the CLI's file-not-found refusal surfaces as ok:false", async () => {
+  it("a PRIMARY full path that does not exist → the CLI's file-not-found refusal surfaces as ok:false", async () => {
     const { client, close } = await connectClient();
     try {
       const r = (await client.callTool({
         name: "suspec_check_file",
-        arguments: { path: "specs/does-not-exist.md" },
+        arguments: { path: artifactPath("specs/does-not-exist.md") },
       })) as {
         isError?: boolean;
         structuredContent: {
@@ -403,7 +612,7 @@ describe("suspec-mcp server", () => {
           source: { exitCode: number };
         };
       };
-      // Confinement admits a not-yet-existing lexical path — the CLI's refusal is the backstop.
+      // Absolute-path validation admits a not-yet-existing path; the CLI owns existence checks.
       expect(r.isError).toBeFalsy();
       expect(r.structuredContent.ok).toBe(false);
       expect(r.structuredContent.note).toMatch(/^file not found/);
@@ -418,7 +627,7 @@ describe("suspec-mcp server", () => {
     try {
       const r = (await client.callTool({
         name: "suspec_check_file",
-        arguments: { path: "specs" },
+        arguments: { path: artifactPath("specs") },
       })) as {
         isError?: boolean;
         structuredContent: {
@@ -443,7 +652,10 @@ describe("suspec-mcp server", () => {
     try {
       const r = (await client.callTool({
         name: "suspec_check_file",
-        arguments: { path: "reviews/review.md", spec: "specs/a/spec.md" },
+        arguments: {
+          path: artifactPath("reviews/review.md"),
+          spec: artifactPath("specs/a/spec.md"),
+        },
       })) as {
         isError?: boolean;
         structuredContent: {
@@ -469,9 +681,9 @@ describe("suspec-mcp server", () => {
       const r = (await client.callTool({
         name: "suspec_check_file",
         arguments: {
-          path: "reviews/review-notask.md",
-          spec: "specs/a/spec.md",
-          task: "tasks/task.md",
+          path: artifactPath("reviews/review-notask.md"),
+          spec: artifactPath("specs/a/spec.md"),
+          task: artifactPath("tasks/task.md"),
         },
       })) as {
         isError?: boolean;
@@ -490,7 +702,7 @@ describe("suspec-mcp server", () => {
     try {
       const r = (await client.callTool({
         name: "suspec_check_file",
-        arguments: { path: "tasks/task.md" },
+        arguments: { path: artifactPath("tasks/task.md") },
       })) as {
         structuredContent: {
           ok: boolean;
@@ -508,30 +720,65 @@ describe("suspec-mcp server", () => {
     }
   });
 
-  it("rejects a path outside the root with isError and runs NO subprocess — primary AND companions", async () => {
+  it("rejects relative or control-character paths before spawning — primary and companions", async () => {
     const { client, close } = await connectClient();
     try {
-      const escapes = [
-        { path: "../../../etc/passwd" },
-        { path: "reviews/review.md", spec: "../../../etc/passwd" },
+      const invalid = [
+        { path: "relative/spec.md" },
+        { path: artifactPath("reviews/review.md"), spec: "relative/spec.md" },
         {
-          path: "reviews/review.md",
-          spec: "specs/a/spec.md",
-          task: "/etc/passwd",
+          path: artifactPath("reviews/review.md"),
+          spec: artifactPath("specs/a/spec.md"),
+          task: `${artifactPath("tasks/task.md")}${String.fromCharCode(0)}`,
+        },
+        {
+          path: `${artifactPath("specs/a/spec.md")}${String.fromCharCode(127)}`,
+        },
+        {
+          path: `${artifactPath("specs/a/spec.md")}${String.fromCharCode(0x85)}`,
+        },
+        {
+          path: `${artifactPath("specs/a/spec.md")}\u202e`,
+        },
+        {
+          path: artifactPath("reviews/review.md"),
+          spec: `${artifactPath("specs/a/spec.md")}${String.fromCharCode(0x85)}`,
+        },
+        {
+          path: artifactPath("reviews/review.md"),
+          spec: artifactPath("specs/a/spec.md"),
+          task: `${artifactPath("tasks/task.md")}${String.fromCharCode(0x85)}`,
         },
       ];
-      for (const args of escapes) {
+      for (const args of invalid) {
         const r = (await client.callTool({
           name: "suspec_check_file",
           arguments: args,
         })) as { isError?: boolean; content: { text: string }[] };
         expect(r.isError, JSON.stringify(args)).toBe(true);
-        expect(r.content[0].text).toMatch(/outside the workspace root/);
+        expect(r.content[0].text).toMatch(/full absolute path/);
       }
-      // No `suspec` subprocess was spawned for any rejected path.
       expect(invocations()).toEqual([]);
     } finally {
       await close();
+    }
+  });
+
+  it("passes an absolute artifact path outside the subprocess cwd unchanged", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "suspec-mcp-external-path-"));
+    const outsideSpec = join(outside, "spec.md");
+    writeFileSync(outsideSpec, "---\ntype: spec\nid: SPEC-outside\n---\n");
+    const { client, close } = await connectClient();
+    try {
+      const result = (await client.callTool({
+        name: "suspec_check_file",
+        arguments: { path: outsideSpec },
+      })) as { structuredContent: { ok: boolean } };
+      expect(result.structuredContent.ok).toBe(true);
+      expect(invocations()).toContainEqual(["check", outsideSpec, "--json"]);
+    } finally {
+      await close();
+      rmSync(outside, { recursive: true, force: true });
     }
   });
 
@@ -539,7 +786,7 @@ describe("suspec-mcp server", () => {
     const { client, close } = await connectClient();
     try {
       const before = snapshot(root);
-      for (const call of ALL_TOOL_CALLS) {
+      for (const call of allToolCalls()) {
         await client.callTool(call);
       }
       expect(snapshot(root)).toBe(before); // belt-and-suspenders: repo byte-identical after a full sweep
@@ -616,7 +863,7 @@ describe("suspec-mcp server", () => {
     try {
       const r = (await client.callTool({
         name: "suspec_check_file",
-        arguments: { path: "specs/a/spec.md" }, // no response_format → concise
+        arguments: { path: artifactPath("specs/a/spec.md") }, // no response_format → concise
       })) as {
         structuredContent: { responseFormat?: string; data: unknown };
       };

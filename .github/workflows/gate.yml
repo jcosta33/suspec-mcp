@@ -1,6 +1,5 @@
-# The full verification gate: typecheck · lint · coverage · build — plus the AC-011 fixture drift
-# tripwire, which bites here because suspec-cli is checked out as a sibling (the generated-fixtures
-# suite skips loudly without one).
+# The full verification gate: typecheck · lint · coverage · build — plus the fixture drift tripwire,
+# which requires the real sibling suspec-cli checkout below.
 name: gate
 
 on:

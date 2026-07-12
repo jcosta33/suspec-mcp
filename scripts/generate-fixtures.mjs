@@ -24,7 +24,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveSuspecBin } from "./resolve-suspec-bin.mjs";
+import { inspectSuspecBin, resolveSuspecBin } from "./resolve-suspec-bin.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..");
@@ -38,7 +38,9 @@ function arg(name, fallback) {
 
 const outDir = resolve(arg("--out", join(repoRoot, "test", "fixtures")));
 const suspecBinArg = arg("--suspec-bin", null);
-const suspecBin = suspecBinArg ? resolve(suspecBinArg) : resolveSuspecBin(repoRoot);
+const suspecBin = suspecBinArg
+  ? resolve(suspecBinArg)
+  : resolveSuspecBin(repoRoot);
 if (!suspecBin) {
   console.error(
     "generate-fixtures: cannot find the suspec binary. Pass --suspec-bin <path>, set SUSPEC_BIN, " +
@@ -46,6 +48,10 @@ if (!suspecBin) {
   );
   process.exit(2);
 }
+const provenance = inspectSuspecBin(suspecBin);
+process.stderr.write(
+  `suspec-cli provenance: root=${resolve(suspecBin, "../..")}, head=${provenance.gitHead}, dirty=${provenance.worktreeDirty}, worktree=${provenance.worktreeSha256}, binary=${provenance.binarySha256}\n`,
+);
 
 // Run `suspec <args> --json` in `cwd`; return the parsed JSON (or throw a clear error). Structured
 // errors (an `{error, message}` body with exit 2) are as much a captured shape as a success report,
@@ -140,6 +146,55 @@ const TASK = [
   "",
 ].join("\n");
 
+const NOT_A_TASK = [
+  "---",
+  "type: spec",
+  "id: TASK-demo",
+  "status: ready",
+  "---",
+  "",
+  "# Not a task",
+  "",
+].join("\n");
+
+const TASK_EMPTY_SCOPE = [
+  "---",
+  "type: task",
+  "id: TASK-demo",
+  "source:",
+  "  - SPEC-demo-feature",
+  "status: ready",
+  "---",
+  "",
+  "# Scope-less task",
+  "",
+].join("\n");
+
+const TASK_WRONG_SOURCE = [
+  "---",
+  "type: task",
+  "id: TASK-demo",
+  "source:",
+  "  - SPEC-other",
+  "scope: [AC-001]",
+  "status: ready",
+  "---",
+  "",
+  "# Wrong-source task",
+  "",
+].join("\n");
+
+const NOT_A_SPEC = [
+  "---",
+  "type: task",
+  "id: SPEC-demo-feature",
+  "status: ready",
+  "---",
+  "",
+  "# Not a spec",
+  "",
+].join("\n");
+
 // A clean task-keyed review: the Pass row carries evidence and a verify block matching the spec's
 // named command.
 const REVIEW = [
@@ -183,6 +238,36 @@ const REVIEW_NOTASK = [
   "",
 ].join("\n");
 
+const REVIEW_TASK_LIST = [
+  "---",
+  "type: review",
+  "id: REVIEW-demo-list",
+  "task:",
+  "  - TASK-demo",
+  "  - TASK-other",
+  "status: needs-human",
+  "---",
+  "",
+  "## Requirement coverage",
+  "",
+].join("\n");
+
+const REVIEW_TASK_MISMATCH = REVIEW.replace(
+  "task: TASK-demo",
+  "task: TASK-other",
+);
+
+const REVIEW_QUOTED_BOM = [
+  "\ufeff---",
+  'type: "review"',
+  "id: REVIEW-demo-quoted-bom",
+  "status: needs-human",
+  "---",
+  "",
+  "## Requirement coverage",
+  "",
+].join("\n");
+
 // A diagnostic-carrying review: a Pass row with an EMPTY Evidence cell and no verify block, so the
 // captured report pins the diagnostic fields (code/severity/message/line) with real check output.
 const REVIEW_BAD = [
@@ -203,13 +288,24 @@ const REVIEW_BAD = [
 
 function main() {
   mkdirSync(outDir, { recursive: true });
+  write("provenance", provenance);
   const scratch = mkdtempSync(join(tmpdir(), "suspec-mcp-fixtures-"));
   try {
     process.stderr.write(`generating fixtures in ${scratch}\n`);
     writeFileSync(join(scratch, "spec-demo.md"), SPEC);
     writeFileSync(join(scratch, "task-demo.md"), TASK);
+    writeFileSync(join(scratch, "not-a-task.md"), NOT_A_TASK);
+    writeFileSync(join(scratch, "task-empty-scope.md"), TASK_EMPTY_SCOPE);
+    writeFileSync(join(scratch, "task-wrong-source.md"), TASK_WRONG_SOURCE);
+    writeFileSync(join(scratch, "not-a-spec.md"), NOT_A_SPEC);
     writeFileSync(join(scratch, "review-demo.md"), REVIEW);
     writeFileSync(join(scratch, "review-notask.md"), REVIEW_NOTASK);
+    writeFileSync(join(scratch, "review-task-list.md"), REVIEW_TASK_LIST);
+    writeFileSync(
+      join(scratch, "review-task-mismatch.md"),
+      REVIEW_TASK_MISMATCH,
+    );
+    writeFileSync(join(scratch, "review-quoted-bom.md"), REVIEW_QUOTED_BOM);
     writeFileSync(join(scratch, "review-bad.md"), REVIEW_BAD);
 
     // 1. the per-file check reports: a clean spec, a clean review (both companions), and a
@@ -231,6 +327,17 @@ function main() {
       suspec(scratch, [
         "check",
         "review-bad.md",
+        "--spec",
+        "spec-demo.md",
+        "--task",
+        "task-demo.md",
+      ]),
+    );
+    write(
+      "check-review-task-mismatch",
+      suspec(scratch, [
+        "check",
+        "review-task-mismatch.md",
         "--spec",
         "spec-demo.md",
         "--task",
@@ -288,6 +395,67 @@ function main() {
         "--task",
         "task-demo.md",
       ]),
+    );
+
+    // 9. malformed task companions must never erase or mis-key review coverage.
+    write(
+      "error-task-wrong-type",
+      suspec(scratch, [
+        "check",
+        "review-demo.md",
+        "--spec",
+        "spec-demo.md",
+        "--task",
+        "not-a-task.md",
+      ]),
+    );
+    write(
+      "error-task-empty-scope",
+      suspec(scratch, [
+        "check",
+        "review-demo.md",
+        "--spec",
+        "spec-demo.md",
+        "--task",
+        "task-empty-scope.md",
+      ]),
+    );
+    write(
+      "error-task-wrong-source",
+      suspec(scratch, [
+        "check",
+        "review-demo.md",
+        "--spec",
+        "spec-demo.md",
+        "--task",
+        "task-wrong-source.md",
+      ]),
+    );
+    write(
+      "error-spec-wrong-type",
+      suspec(scratch, [
+        "check",
+        "review-demo.md",
+        "--spec",
+        "not-a-spec.md",
+        "--task",
+        "task-demo.md",
+      ]),
+    );
+    write(
+      "error-review-task-list",
+      suspec(scratch, [
+        "check",
+        "review-task-list.md",
+        "--spec",
+        "spec-demo.md",
+        "--task",
+        "task-demo.md",
+      ]),
+    );
+    write(
+      "error-quoted-bom-missing-spec",
+      suspec(scratch, ["check", "review-quoted-bom.md"]),
     );
 
     process.stderr.write(`done. fixtures in ${outDir}\n`);

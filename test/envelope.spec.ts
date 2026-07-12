@@ -49,7 +49,10 @@ describe("build_envelope", () => {
   it("surfaces a structured CLI error as ok:false with the CLI's own message in note", () => {
     const env = build_envelope({
       kind: "structured-error",
-      invocation: { command: "suspec check r.md --spec s.md --json", exitCode: 2 },
+      invocation: {
+        command: "suspec check r.md --spec s.md --json",
+        exitCode: 2,
+      },
       error: {
         error: "Usage",
         message:
@@ -71,10 +74,16 @@ describe("build_envelope", () => {
     const slice = (d: unknown) => ({
       level: (d as { level: string }).level,
     });
-    const concise = build_envelope(okResult(data), { format: "concise", slice });
+    const concise = build_envelope(okResult(data), {
+      format: "concise",
+      slice,
+    });
     expect(concise.data).toEqual({ level: "warning" });
     expect(concise.responseFormat).toBe("concise");
-    const detailed = build_envelope(okResult(data), { format: "detailed", slice });
+    const detailed = build_envelope(okResult(data), {
+      format: "detailed",
+      slice,
+    });
     expect(detailed.data).toEqual(data);
     expect(detailed.responseFormat).toBe("detailed");
   });
@@ -88,7 +97,10 @@ describe("build_envelope", () => {
       },
       { format: "concise", slice: () => ({ gutted: true }) },
     );
-    expect(env.data).toEqual({ error: "Usage", message: "file not found: x.md" });
+    expect(env.data).toEqual({
+      error: "Usage",
+      message: "file not found: x.md",
+    });
   });
 });
 
@@ -111,7 +123,7 @@ describe("respond", () => {
     }
   });
 
-  it("mirrors the payload into a text content block for text-only clients (suspec-works #88)", () => {
+  it("mirrors the payload into a text content block for text-only clients", () => {
     // opencode renders only content[].text and drops structuredContent — the payload must survive there.
     const result = respond(okResult({ level: "clean" }));
     expect("content" in result).toBe(true);
@@ -136,7 +148,7 @@ describe("respond", () => {
     expect("content" in result).toBe(true);
     if ("content" in result) {
       const summary = result.content[0]?.text ?? "";
-      expect(summary).toContain("not runnable here");
+      expect(summary).toContain("ran; CLI refused invocation");
       expect(summary).toContain("no verdict issued");
       expect(summary).toContain("missing --spec");
     }
@@ -145,9 +157,9 @@ describe("respond", () => {
 
 describe("tool_error", () => {
   it("carries isError and no structuredContent (so it cannot violate the success outputSchema)", () => {
-    const e = tool_error("refusing a path outside the workspace root");
+    const e = tool_error("path must be an absolute full path");
     expect(e.isError).toBe(true);
     expect("structuredContent" in e).toBe(false);
-    expect(e.content[0].text).toContain("refusing a path");
+    expect(e.content[0].text).toContain("absolute full path");
   });
 });

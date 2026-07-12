@@ -1,0 +1,4 @@
+{
+  "error": "Usage",
+  "message": "--spec companion must have `type: spec` or omit `type:` for supported legacy input; received task"
+}

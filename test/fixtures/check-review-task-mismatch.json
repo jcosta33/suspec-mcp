@@ -1,0 +1,12 @@
+{
+  "path": "review-task-mismatch.md",
+  "level": "blocking",
+  "diagnostics": [
+    {
+      "code": "C020",
+      "severity": "hard-error",
+      "message": "review names task `TASK-other` but was checked against the packet for `TASK-demo` — coverage/evidence cannot be reconciled (unresolvable-ref)",
+      "line": null
+    }
+  ]
+}

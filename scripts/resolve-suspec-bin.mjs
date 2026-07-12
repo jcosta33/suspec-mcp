@@ -1,20 +1,103 @@
 // Resolve the real `suspec` CLI binary for fixture generation (AC-011).
 //
-// The naive default (`../suspec-cli/bin/suspec.js`) assumes the sibling FOLDER is named after the
-// remote — but folders and remotes deliberately differ in some checkouts (a sibling folder named
-// `corpus-cli` whose package/remote is `suspec-cli`). Resolution order:
+// A checkout directory need not match its package or remote name. Resolution order:
 //   1. SUSPEC_BIN env var (a path to the binary), then
 //   2. every sibling directory whose package.json name is "suspec-cli" and that ships bin/suspec.js
 //      (folder name irrelevant), preferring `../suspec-cli` when both exist.
 // Returns the absolute path, or null when nothing resolves — callers decide whether that is an error
 // (the generator) or a loud skip (the drift-tripwire test).
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { dirname, join, relative, resolve, sep } from "node:path";
+
+const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+
+function git(root, args, encoding = "utf8") {
+  return execFileSync("git", ["-C", root, ...args], { encoding });
+}
+
+export function inspectSuspecBin(value) {
+  const bin = realpathSync(resolve(value));
+  const packageRoot = realpathSync(resolve(dirname(bin), ".."));
+  const packagePath = join(packageRoot, "package.json");
+  if (!existsSync(packagePath)) {
+    throw new Error(
+      `suspec fixture binary has no package.json at ${packagePath}`,
+    );
+  }
+  const pkg = JSON.parse(readFileSync(packagePath, "utf8"));
+  if (pkg.name !== "suspec-cli") {
+    throw new Error(
+      `suspec fixture binary must belong to package suspec-cli; received ${pkg.name ?? "no package name"}`,
+    );
+  }
+  const declaredValue = pkg.bin?.suspec;
+  if (typeof declaredValue !== "string" || declaredValue.length === 0) {
+    throw new Error("suspec-cli package must declare a nonempty bin.suspec path");
+  }
+  const declaredRequest = resolve(packageRoot, declaredValue);
+  const packagePrefix = `${packageRoot}${sep}`;
+  if (!declaredRequest.startsWith(packagePrefix) || !existsSync(declaredRequest)) {
+    throw new Error(`suspec-cli declared bin.suspec is missing or escapes its package: ${declaredValue}`);
+  }
+  const declaredBin = realpathSync(declaredRequest);
+  if (declaredBin !== bin) {
+    throw new Error(
+      `suspec fixture binary must be the package's declared suspec binary; declared=${relative(packageRoot, declaredBin)} received=${relative(packageRoot, bin)}`,
+    );
+  }
+  const gitRoot = realpathSync(
+    git(packageRoot, ["rev-parse", "--show-toplevel"]).trim(),
+  );
+  if (gitRoot !== packageRoot) {
+    throw new Error(
+      `suspec-cli package root must be its git root; package=${packageRoot} git=${gitRoot}`,
+    );
+  }
+  const head = git(packageRoot, ["rev-parse", "HEAD"]).trim();
+  const status = git(
+    packageRoot,
+    ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+    "buffer",
+  );
+  const diff = git(packageRoot, ["diff", "--binary", "HEAD"], "buffer");
+  const untracked = git(
+    packageRoot,
+    ["ls-files", "--others", "--exclude-standard", "-z"],
+    "buffer",
+  )
+    .toString("utf8")
+    .split("\0")
+    .filter(Boolean)
+    .sort();
+  const worktree = createHash("sha256").update(status).update(diff);
+  for (const path of untracked) {
+    worktree
+      .update(path)
+      .update("\0")
+      .update(readFileSync(join(packageRoot, path)));
+  }
+  return {
+    packageName: pkg.name,
+    packageVersion: pkg.version,
+    packageRoot: "git-root",
+    binary: relative(packageRoot, bin),
+    binarySha256: sha256(readFileSync(bin)),
+    gitHead: head,
+    worktreeDirty: status.length > 0,
+    worktreeSha256: worktree.digest("hex"),
+  };
+}
 
 export function resolveSuspecBin(repoRoot) {
   const fromEnv = process.env.SUSPEC_BIN;
-  if (fromEnv && existsSync(fromEnv)) return resolve(fromEnv);
+  if (fromEnv && existsSync(fromEnv)) {
+    const resolved = resolve(fromEnv);
+    inspectSuspecBin(resolved);
+    return resolved;
+  }
 
   const parent = resolve(repoRoot, "..");
   const candidates = [];

@@ -1,0 +1,4 @@
+{
+  "error": "Usage",
+  "message": "--task companion must have `type: task`; received spec"
+}

@@ -14,10 +14,8 @@ import { resolveSuspecBin } from "../scripts/resolve-suspec-bin.mjs";
 // "what's checked in" and "what the binary now emits" must fail here, loudly.
 //
 // The generator passes every artifact path RELATIVE with cwd=scratch, so the captured output carries
-// no machine-specific value and the compare needs no normalization. If the suspec binary is not
-// present, the test is skipped (not failed): CI that lacks a sibling suspec-cli checkout cannot
-// regenerate, and a false red there would be noise — but the skip is LOUD (a stderr warning names
-// what was looked for), so a disarmed tripwire is visible, never silent.
+// no machine-specific value and the compare needs no normalization. The real binary is a required
+// test dependency: skipping when it is absent would let contract drift pass undetected.
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..");
@@ -29,6 +27,7 @@ const FIXTURES = [
   "check-spec",
   "check-review",
   "check-review-diagnostics",
+  "check-review-task-mismatch",
   "check-unchecked",
   "contract",
   "error-missing-task",
@@ -36,50 +35,49 @@ const FIXTURES = [
   "error-companion-not-found",
   "error-missing-spec",
   "error-task-not-referenced",
+  "error-task-wrong-type",
+  "error-task-empty-scope",
+  "error-task-wrong-source",
+  "error-spec-wrong-type",
+  "error-review-task-list",
+  "error-quoted-bom-missing-spec",
+  "provenance",
 ];
 
-const suspecPresent = suspecBin !== null;
-if (!suspecPresent) {
-  // eslint-disable-next-line no-console — a silently disarmed tripwire is worse than noise
-  console.warn(
-    "[generated-fixtures] SKIPPING the fixture drift tripwire: no suspec binary found " +
-      "(looked for SUSPEC_BIN and sibling checkouts whose package name is suspec-cli). " +
-      "Fixtures can go stale undetected until this suite runs somewhere the binary exists.",
-  );
-}
+describe("the contract fixtures stay generated from the real binary", () => {
+  it("regenerating into a temp dir reproduces the checked-in fixtures", () => {
+    expect(
+      suspecBin,
+      "fixture drift requires SUSPEC_BIN or a sibling checkout whose package name is suspec-cli",
+    ).not.toBeNull();
+    if (suspecBin === null) return;
 
-describe.skipIf(!suspecPresent)(
-  "the contract fixtures stay generated from the real binary",
-  () => {
-    it("regenerating into a temp dir reproduces the checked-in fixtures", () => {
-      const tmp = mkdtempSync(join(tmpdir(), "suspec-mcp-genfix-"));
-      try {
-        const res = spawnSync(
-          process.execPath,
-          [generator, "--out", tmp, "--suspec-bin", suspecBin],
-          { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+    const tmp = mkdtempSync(join(tmpdir(), "suspec-mcp-genfix-"));
+    try {
+      const res = spawnSync(
+        process.execPath,
+        [generator, "--out", tmp, "--suspec-bin", suspecBin],
+        { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+      );
+      expect(res.status, `generator failed: ${res.stderr ?? ""}`).toBe(0);
+
+      for (const name of FIXTURES) {
+        const fresh = JSON.parse(
+          readFileSync(join(tmp, `${name}.json`), "utf8"),
+        );
+        const checkedIn = JSON.parse(
+          readFileSync(join(checkedInDir, `${name}.json`), "utf8"),
         );
         expect(
-          res.status,
-          `generator failed: ${res.stderr ?? ""}`,
-        ).toBe(0);
-
-        for (const name of FIXTURES) {
-          const fresh = JSON.parse(readFileSync(join(tmp, `${name}.json`), "utf8"));
-          const checkedIn = JSON.parse(
-            readFileSync(join(checkedInDir, `${name}.json`), "utf8"),
-          );
-          expect(
-            checkedIn,
-            `${name}.json is stale — re-run \`node scripts/generate-fixtures.mjs\``,
-          ).toEqual(fresh);
-        }
-      } finally {
-        rmSync(tmp, { recursive: true, force: true });
+          checkedIn,
+          `${name}.json is stale — re-run \`node scripts/generate-fixtures.mjs\``,
+        ).toEqual(fresh);
       }
-      // Spawns the real suspec binary once per captured shape; legitimately exceeds the 5s default
-      // under the parallel coverage run. Not a race — a genuinely slow subprocess, so a longer
-      // per-test timeout is the right fix.
-    }, 60_000);
-  },
-);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+    // Spawns the real suspec binary once per captured shape; legitimately exceeds the 5s default
+    // under the parallel coverage run. Not a race — a genuinely slow subprocess, so a longer
+    // per-test timeout is the right fix.
+  }, 60_000);
+});

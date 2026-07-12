@@ -3,50 +3,42 @@ import { describe, it, expect } from "vitest";
 import { parse_config } from "../src/index.ts";
 
 describe("parse_config", () => {
-  it("defaults to cwd + `suspec` on PATH", () => {
-    const c = parse_config([], {}, "/ws");
-    expect(c.bin).toBe("suspec");
-    expect(c.root).toContain("ws");
+  it("defaults to `suspec` on PATH", () => {
+    expect(parse_config([], {}).bin).toBe("suspec");
   });
 
-  it("reads workspace + bin from the environment", () => {
-    const c = parse_config(
-      [],
-      { SUSPEC_WORKSPACE: "/env-ws", SUSPEC_BIN: "/bin/suspec" },
-      "/cwd",
+  it("reads the binary from the environment", () => {
+    expect(parse_config([], { SUSPEC_BIN: "/bin/suspec" }).bin).toBe(
+      "/bin/suspec",
     );
-    expect(c.bin).toBe("/bin/suspec");
-    expect(c.root).toContain("env-ws");
   });
 
-  it("lets flags override the environment", () => {
-    const c = parse_config(
-      ["--workspace", "/flag-ws", "--suspec-bin", "/flag-bin"],
-      { SUSPEC_WORKSPACE: "/env-ws" },
-      "/cwd",
+  it("lets the binary flag override the environment", () => {
+    expect(
+      parse_config(["--suspec-bin", "/flag/bin"], {
+        SUSPEC_BIN: "/env/bin",
+      }).bin,
+    ).toBe("/flag/bin");
+  });
+
+  it("accepts the equals form and ignores an empty value", () => {
+    expect(parse_config(["--suspec-bin=/eq/bin"], {}).bin).toBe("/eq/bin");
+    expect(parse_config(["--suspec-bin="], {}).bin).toBe("suspec");
+  });
+
+  it("does not consume a flag-shaped token as the binary value", () => {
+    expect(parse_config(["--suspec-bin", "--other"], {}).bin).toBe("suspec");
+  });
+
+  it("rejects the retired workspace flag and environment variable", () => {
+    expect(() => parse_config(["--workspace", "/repo"], {})).toThrow(
+      /full artifact paths/,
     );
-    expect(c.bin).toBe("/flag-bin");
-    expect(c.root).toContain("flag-ws");
-  });
-
-  it("treats a flag-shaped value as missing (does not consume --suspec-bin as the workspace)", () => {
-    const c = parse_config(["--workspace", "--suspec-bin", "/b"], {}, "/cwd");
-    expect(c.bin).toBe("/b"); // --suspec-bin was NOT swallowed as the --workspace value
-    expect(c.root).toContain("cwd"); // --workspace got no value → stays the cwd default
-  });
-
-  it("accepts the equals form (--workspace=<path> / --suspec-bin=<path>)", () => {
-    const c = parse_config(
-      ["--workspace=/eq-ws", "--suspec-bin=/eq-bin"],
-      { SUSPEC_WORKSPACE: "/env-ws" },
-      "/cwd",
+    expect(() => parse_config(["--workspace=/repo"], {})).toThrow(
+      /full artifact paths/,
     );
-    expect(c.bin).toBe("/eq-bin");
-    expect(c.root).toContain("eq-ws");
-  });
-
-  it("ignores an empty equals value (--workspace= keeps the default)", () => {
-    const c = parse_config(["--workspace="], {}, "/cwd");
-    expect(c.root).toContain("cwd");
+    expect(() => parse_config([], { SUSPEC_WORKSPACE: "/repo" })).toThrow(
+      /full artifact paths/,
+    );
   });
 });

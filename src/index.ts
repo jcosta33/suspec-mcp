@@ -1,64 +1,55 @@
 #!/usr/bin/env node
-// Entry: resolve config (workspace root + `suspec` binary), build the server, connect stdio. The stdout
-// stream IS the MCP protocol — all diagnostics go to stderr only.
+// Entry: resolve the `suspec` binary, build the server, and connect stdio. Stdout is the MCP
+// protocol, so diagnostics go to stderr only.
 
 import { pathToFileURL } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
-import { resolve_root } from "./roots.ts";
 import { create_server } from "./server.ts";
 
-export type Config = Readonly<{ root: string; bin: string }>;
+export type Config = Readonly<{ bin: string }>;
 
-// Config order: CLI flags > env > cwd. `--workspace <path>` / SUSPEC_WORKSPACE picks the workspace;
-// `--suspec-bin <path>` / SUSPEC_BIN picks the `suspec` binary (default `suspec` on PATH).
-// Both flags accept the two-token form (`--workspace <path>`) and the equals form (`--workspace=<path>`).
+const RETIRED_WORKSPACE_MESSAGE =
+  "--workspace and SUSPEC_WORKSPACE are retired; suspec-mcp tools require explicit full artifact paths";
+
+// Config order for the CLI binary: flag, environment, then `suspec` on PATH.
 export function parse_config(
   argv: readonly string[],
   env: NodeJS.ProcessEnv,
-  cwd: string,
 ): Config {
-  let root = env.SUSPEC_WORKSPACE ?? cwd;
+  if (env.SUSPEC_WORKSPACE !== undefined) {
+    throw new Error(RETIRED_WORKSPACE_MESSAGE);
+  }
   let bin = env.SUSPEC_BIN ?? "suspec";
-  for (let i = 0; i < argv.length; i += 1) {
-    const token = argv[i];
-    // `--flag=value` form.
-    const eq = token.indexOf("=");
-    if (eq > 2 && token.startsWith("--")) {
-      const name = token.slice(0, eq);
-      const value = token.slice(eq + 1);
-      if (name === "--workspace" && value !== "") root = value;
-      else if (name === "--suspec-bin" && value !== "") bin = value;
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (token === "--workspace" || token.startsWith("--workspace=")) {
+      throw new Error(RETIRED_WORKSPACE_MESSAGE);
+    }
+    if (token.startsWith("--suspec-bin=")) {
+      const value = token.slice("--suspec-bin=".length);
+      if (value.length > 0) {
+        bin = value;
+      }
       continue;
     }
-    // `--flag value` form. Treat a flag-shaped next token as a missing value
-    // (don't consume `--suspec-bin` as the workspace).
-    const next = argv[i + 1];
-    const value =
-      next !== undefined && !next.startsWith("--") ? next : undefined;
-    if (token === "--workspace" && value !== undefined) {
-      root = value;
-      i += 1;
-    } else if (token === "--suspec-bin" && value !== undefined) {
-      bin = value;
-      i += 1;
+    if (token === "--suspec-bin") {
+      const value = argv[index + 1];
+      if (value !== undefined && !value.startsWith("--")) {
+        bin = value;
+        index += 1;
+      }
     }
   }
-  return { root: resolve_root(root), bin };
+  return { bin };
 }
 
 /* v8 ignore start -- the process entry; create_server + parse_config are unit-tested directly */
 async function main(): Promise<void> {
-  const { root, bin } = parse_config(
-    process.argv.slice(2),
-    process.env,
-    process.cwd(),
-  );
-  const server = create_server({ env: { bin, cwd: root }, root });
+  const { bin } = parse_config(process.argv.slice(2), process.env);
+  const server = create_server({ env: { bin, cwd: process.cwd() } });
   await server.connect(new StdioServerTransport());
-  process.stderr.write(
-    `suspec-mcp: ready (workspace=${root}, suspec=${bin})\n`,
-  );
+  process.stderr.write(`suspec-mcp: ready (suspec=${bin})\n`);
 }
 
 function is_main_module(metaUrl: string, entry: string | undefined): boolean {

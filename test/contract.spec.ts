@@ -38,7 +38,23 @@ function runStub(args: string[]): { data: unknown; exit: number | null } {
     );
     writeFileSync(
       join(dir, "task.md"),
-      "---\ntype: task\nid: TASK-x\nscope: [AC-001]\n---\n",
+      "---\ntype: task\nid: TASK-x\nsource:\n  - SPEC-x\nscope: [AC-001]\n---\n",
+    );
+    writeFileSync(
+      join(dir, "not-a-task.md"),
+      "---\ntype: spec\nid: TASK-x\n---\n",
+    );
+    writeFileSync(
+      join(dir, "scope-less-task.md"),
+      "---\ntype: task\nid: TASK-x\nsource:\n  - SPEC-x\n---\n",
+    );
+    writeFileSync(
+      join(dir, "wrong-source-task.md"),
+      "---\ntype: task\nid: TASK-x\nsource:\n  - SPEC-other\nscope: [AC-001]\n---\n",
+    );
+    writeFileSync(
+      join(dir, "not-a-spec.md"),
+      "---\ntype: task\nid: SPEC-x\n---\n",
     );
     writeFileSync(
       join(dir, "review.md"),
@@ -47,6 +63,18 @@ function runStub(args: string[]): { data: unknown; exit: number | null } {
     writeFileSync(
       join(dir, "review-notask.md"),
       "---\ntype: review\nid: REVIEW-y\n---\n\n## Requirement coverage\n",
+    );
+    writeFileSync(
+      join(dir, "review-task-list.md"),
+      "---\ntype: review\nid: REVIEW-list\ntask:\n  - TASK-x\n  - TASK-other\n---\n\n## Requirement coverage\n",
+    );
+    writeFileSync(
+      join(dir, "review-task-mismatch.md"),
+      "---\ntype: review\nid: REVIEW-mismatch\ntask: TASK-other\n---\n\n## Requirement coverage\n",
+    );
+    writeFileSync(
+      join(dir, "review-quoted-bom.md"),
+      '\ufeff---\ntype: "review"\nid: REVIEW-normalized\n---\n\n## Requirement coverage\n',
     );
     const res = spawnSync(stubBin, [...args, "--json"], {
       cwd: dir,
@@ -82,10 +110,23 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     );
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      // the real capture carries the empty-evidence Pass row's diagnostics — a genuine finding
+      // the real capture carries the empty-evidence Pass row's diagnostic
       expect(parsed.data.diagnostics.length).toBeGreaterThan(0);
       expect(parsed.data.diagnostics.map((d) => d.code)).toContain("C016");
       expect(parsed.data.level).toBe("blocking");
+    }
+  });
+
+  it("a mismatched task companion produces a blocking C020 report", () => {
+    const parsed = CheckReportSchema.safeParse(
+      fixture("check-review-task-mismatch.json"),
+    );
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.level).toBe("blocking");
+      expect(parsed.data.diagnostics.map((item) => item.code)).toContain(
+        "C020",
+      );
     }
   });
 
@@ -105,6 +146,7 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
       "check-spec.json",
       "check-review.json",
       "check-review-diagnostics.json",
+      "check-review-task-mismatch.json",
       "check-unchecked.json",
     ]) {
       expect(
@@ -127,7 +169,9 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
   });
 
   it("the conditional-companion refusal is a structured error (the review names a task, no --task handed)", () => {
-    const parsed = SuspecErrorSchema.safeParse(fixture("error-missing-task.json"));
+    const parsed = SuspecErrorSchema.safeParse(
+      fixture("error-missing-task.json"),
+    );
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.data.message).toMatch(/missing --task/);
@@ -155,7 +199,9 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
   });
 
   it("a review checked with NO --spec at all is a structured error (missing --spec)", () => {
-    const parsed = SuspecErrorSchema.safeParse(fixture("error-missing-spec.json"));
+    const parsed = SuspecErrorSchema.safeParse(
+      fixture("error-missing-spec.json"),
+    );
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.data.message).toMatch(/missing --spec/);
@@ -172,9 +218,55 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     }
   });
 
+  it("malformed task companions are structured errors", () => {
+    const cases = [
+      ["error-task-wrong-type.json", /must have `type: task`/],
+      ["error-task-empty-scope.json", /at least one requirement in `scope:`/],
+      ["error-task-wrong-source.json", /does not name handed spec/],
+    ] as const;
+    for (const [name, message] of cases) {
+      const parsed = SuspecErrorSchema.safeParse(fixture(name));
+      expect(parsed.success, name).toBe(true);
+      if (parsed.success) expect(parsed.data.message).toMatch(message);
+    }
+  });
+
+  it("a non-spec --spec companion is a structured error", () => {
+    const parsed = SuspecErrorSchema.safeParse(
+      fixture("error-spec-wrong-type.json"),
+    );
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.message).toMatch(/must have `type: spec`/);
+    }
+  });
+
+  it("a list-shaped review task ref is a structured error", () => {
+    const parsed = SuspecErrorSchema.safeParse(
+      fixture("error-review-task-list.json"),
+    );
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.message).toMatch(
+        /review `task:` must be a single scalar/,
+      );
+    }
+  });
+
+  it("a quoted BOM-prefixed review with no spec is a structured error", () => {
+    const parsed = SuspecErrorSchema.safeParse(
+      fixture("error-quoted-bom-missing-spec.json"),
+    );
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.message).toMatch(/missing --spec/);
+  });
+
   it("the tripwire FAILS if a consumed field is renamed/dropped (a diagnostic's message; the contract's checks)", () => {
     const report = JSON.parse(
-      readFileSync(join(here, "fixtures", "check-review-diagnostics.json"), "utf8"),
+      readFileSync(
+        join(here, "fixtures", "check-review-diagnostics.json"),
+        "utf8",
+      ),
     );
     delete report.diagnostics[0].message;
     expect(CheckReportSchema.safeParse(report).success).toBe(false);
@@ -190,7 +282,10 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     // The adapter branches on NO payload enum — it relays these fields — so a benign additive CLI
     // value class must parse (the enum policy in contract.ts).
     const report = JSON.parse(
-      readFileSync(join(here, "fixtures", "check-review-diagnostics.json"), "utf8"),
+      readFileSync(
+        join(here, "fixtures", "check-review-diagnostics.json"),
+        "utf8",
+      ),
     );
     report.level = "a-new-level-class";
     report.diagnostics[0].severity = "a-new-severity-class";
@@ -318,12 +413,103 @@ describe("the test stub conforms to the SAME contract as the real captured outpu
     const parsed = SuspecErrorSchema.safeParse(data);
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect(parsed.data.message).toBe("--spec file not found: no-such-spec.md");
+      expect(parsed.data.message).toBe(
+        "--spec file not found: no-such-spec.md",
+      );
       const real = SuspecErrorSchema.parse(
         fixture("error-companion-not-found.json"),
       );
       expect(real.message).toMatch(/--spec file not found/);
     }
+    expect(exit).toBe(2);
+  });
+
+  it("stub refuses malformed task companions like the real CLI", () => {
+    const cases = [
+      ["not-a-task.md", "error-task-wrong-type.json"],
+      ["scope-less-task.md", "error-task-empty-scope.json"],
+      ["wrong-source-task.md", "error-task-wrong-source.json"],
+    ] as const;
+    for (const [task, fixtureName] of cases) {
+      const { data, exit } = runStub([
+        "check",
+        "review.md",
+        "--spec",
+        "spec.md",
+        "--task",
+        task,
+      ]);
+      const parsed = SuspecErrorSchema.parse(data);
+      const real = SuspecErrorSchema.parse(fixture(fixtureName));
+      expect(parsed.message.replaceAll("SPEC-x", "SPEC-demo-feature")).toBe(
+        real.message,
+      );
+      expect(exit).toBe(2);
+    }
+  });
+
+  it("stub refuses a non-spec --spec companion like the real CLI", () => {
+    const { data, exit } = runStub([
+      "check",
+      "review.md",
+      "--spec",
+      "not-a-spec.md",
+      "--task",
+      "task.md",
+    ]);
+    const parsed = SuspecErrorSchema.parse(data);
+    const real = SuspecErrorSchema.parse(fixture("error-spec-wrong-type.json"));
+    expect(parsed.message).toBe(real.message);
+    expect(exit).toBe(2);
+  });
+
+  it("stub refuses a list-shaped review task ref like the real CLI", () => {
+    const { data, exit } = runStub([
+      "check",
+      "review-task-list.md",
+      "--spec",
+      "spec.md",
+      "--task",
+      "task.md",
+    ]);
+    const parsed = SuspecErrorSchema.parse(data);
+    const real = SuspecErrorSchema.parse(
+      fixture("error-review-task-list.json"),
+    );
+    expect(parsed.message).toBe(real.message);
+    expect(exit).toBe(2);
+  });
+
+  it("stub emits the real C020 shape for a mismatched task companion", () => {
+    const { data, exit } = runStub([
+      "check",
+      "review-task-mismatch.md",
+      "--spec",
+      "spec.md",
+      "--task",
+      "task.md",
+    ]);
+    const parsed = CheckReportSchema.parse(data);
+    const real = CheckReportSchema.parse(
+      fixture("check-review-task-mismatch.json"),
+    );
+    expect(parsed.level).toBe(real.level);
+    expect(
+      parsed.diagnostics.map((item) => ({
+        ...item,
+        message: item.message.replaceAll("TASK-x", "TASK-demo"),
+      })),
+    ).toEqual(real.diagnostics);
+    expect(exit).toBe(2);
+  });
+
+  it("stub recognizes a quoted BOM-prefixed review like the real CLI", () => {
+    const { data, exit } = runStub(["check", "review-quoted-bom.md"]);
+    const parsed = SuspecErrorSchema.parse(data);
+    const real = SuspecErrorSchema.parse(
+      fixture("error-quoted-bom-missing-spec.json"),
+    );
+    expect(parsed.message).toBe(real.message);
     expect(exit).toBe(2);
   });
 });

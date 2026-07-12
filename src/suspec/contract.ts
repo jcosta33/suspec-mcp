@@ -35,7 +35,7 @@ export const CheckReportSchema = z
   })
   .passthrough();
 
-// An artifact whose frontmatter `type:` has no check face (task, finding, intake, …): the CLI says so
+// An artifact whose frontmatter `type:` has no check face: the CLI says so
 // cleanly (`checked: false`) instead of running the wrong checks — nothing to validate is not a defect.
 export const UncheckedArtifactSchema = z
   .object({

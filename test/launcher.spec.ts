@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 // The shipped entry point (package.json `bin.suspec-mcp`) — what a real install/npx invocation runs.
 // stdio.spec.ts proves the server itself serves over real stdio; this proves the LAUNCHER in front of
 // it starts that server, inherits its stdio, and forwards args, so the thing users actually run is
-// exercised, not just the code behind it. Deterministic: stub `suspec` binary + a temp workspace.
+// exercised, not just the code behind it. Deterministic: stub `suspec` binary plus a temporary root.
 // The launcher has TWO live branches: the dev checkout runs src/ via type stripping (the MCP test
 // below), and a published install — package.json `files` ships no src/ — runs dist/index.js (the
 // installed-tree test below, against a copied launcher in a src-less tree).
@@ -39,7 +39,7 @@ describe("bin/suspec-mcp.js launcher", () => {
   it("starts the server, lists the two tools, and forwards a tool call", async () => {
     const transport = new StdioClientTransport({
       command: process.execPath,
-      args: [launcher, "--workspace", root, "--suspec-bin", stubBin],
+      args: [launcher, "--suspec-bin", stubBin],
     });
     const client = new Client({ name: "launcher-test", version: "0" });
     await client.connect(transport);
@@ -49,7 +49,7 @@ describe("bin/suspec-mcp.js launcher", () => {
 
       const check = (await client.callTool({
         name: "suspec_check_file",
-        arguments: { path: "specs/x.md" },
+        arguments: { path: join(root, "specs", "x.md") },
       })) as {
         structuredContent: {
           noVerdictIssued: boolean;
@@ -57,7 +57,9 @@ describe("bin/suspec-mcp.js launcher", () => {
         };
       };
       expect(check.structuredContent.noVerdictIssued).toBe(true);
-      expect(check.structuredContent.data.diagnostics.length).toBeGreaterThan(0);
+      expect(check.structuredContent.data.diagnostics.length).toBeGreaterThan(
+        0,
+      );
     } finally {
       await client.close();
     }
@@ -80,21 +82,10 @@ describe("bin/suspec-mcp.js launcher", () => {
       );
       const res = spawnSync(
         process.execPath,
-        [
-          join(pkg, "bin", "suspec-mcp.js"),
-          "--workspace",
-          "/w",
-          "--suspec-bin",
-          "suspec",
-        ],
+        [join(pkg, "bin", "suspec-mcp.js"), "--suspec-bin", "suspec"],
         { encoding: "utf8" },
       );
-      expect(JSON.parse(res.stdout)).toEqual([
-        "--workspace",
-        "/w",
-        "--suspec-bin",
-        "suspec",
-      ]);
+      expect(JSON.parse(res.stdout)).toEqual(["--suspec-bin", "suspec"]);
       expect(res.status).toBe(7);
     } finally {
       rmSync(pkg, { recursive: true, force: true });

@@ -1,22 +1,18 @@
 # suspec-mcp
 
-An MCP stdio server that gives agent clients without a shell — Claude Desktop, Cursor, and
-anything else that speaks the Model Context Protocol — access to Suspec's deterministic
-artifact checking.
+An MCP stdio server that gives shell-less agent clients access to Suspec's deterministic artifact
+checking.
 
 It is a thin, hardened adapter over the [`suspec` CLI](https://github.com/jcosta33/suspec-cli):
-every tool call shells out to `suspec check --json` and relays the CLI's recorded facts —
-diagnostics, severity levels, exit codes — under a **no-verdict envelope**. The server never
-adds a Pass/Fail, approval, or merge decision of its own; what a finding means for the work is
-the human's call.
+every tool call shells out to `suspec check --json` and relays the CLI's recorded diagnostics,
+severity levels, and exit codes under a **no-verdict envelope**. The server never adds a Pass/Fail,
+approval, or merge decision of its own; the human decides what those facts mean for the work.
 
 ## Why it exists
 
-Suspec's honesty floor is a set of deterministic checks a reviewer cannot fake: coverage rows
-that match the spec's requirements, verify commands that match what the spec named, Pass rows
-that carry evidence, references that resolve. A terminal agent runs `suspec check` directly.
-A shell-less client cannot — this server is that client's way to run the same checks against
-the same files, with the same results.
+The Suspec CLI checks structural facts such as requirement coverage, verify-command binding,
+evidence presence, and reference resolution. A terminal agent can run `suspec check` directly. This
+server exposes the same command contract to a client without shell access.
 
 ## The tools
 
@@ -33,14 +29,18 @@ frontmatter `type:` — nothing is inferred from filenames or directory layout:
 
 The CLI refuses a missing or unreferenced companion with a blocking error rather than
 silently checking less; that refusal surfaces as `ok: false` with the CLI's own message.
-An artifact type with no check face (a task packet, a finding) comes back as
-`checked: false` — nothing to validate is not a defect.
+An artifact type with no check face comes back as `checked: false`; nothing to validate is not a
+defect.
 
-| input | meaning |
-| --- | --- |
-| `path` | workspace-relative path to the artifact to check |
-| `spec` | (optional) the source spec a review reconciles against |
-| `task` | (optional) the task packet whose scope keys the review's coverage |
+This tool accepts one primary artifact, so the CLI's cross-file duplicate-ID check (C002) cannot run
+through this surface. Use `suspec check <path> [<path>...]` directly when C002 across a file set is
+required. Expanding the MCP input surface is a separate product decision.
+
+| input             | meaning                                                      |
+| ----------------- | ------------------------------------------------------------ |
+| `path`            | full path to the artifact to check                           |
+| `spec`            | full path to the source spec, when checking a review         |
+| `task`            | full path to the task packet, when the review names a task   |
 | `response_format` | `concise` (default) or `detailed` (the verbatim CLI payload) |
 
 ### `suspec_get_checks`
@@ -59,54 +59,74 @@ Every tool result carries the same structure:
 - `source` — provenance: the exact CLI command run and its exit code
   (0 clean · 1 warnings · 2 blocking / structured error).
 - `data` — the CLI's `--json` output, verbatim in `detailed` mode or a targeted slice in
-  `concise` mode (the default, roughly a third of the tokens).
+  `concise` mode (the default).
 - `noVerdictIssued: true` — always, on every result.
 
 ## Run it
 
-Requires Node.js ≥ 22.6 and a [`suspec` CLI](https://github.com/jcosta33/suspec-cli) binary.
+Requires Node.js ≥ 22.6 and a [`suspec` CLI](https://github.com/jcosta33/suspec-cli) binary. Neither
+package is published; install both from source. After installing the CLI:
 
-```jsonc
-// e.g. Claude Desktop's claude_desktop_config.json, or any MCP client config
+```sh
+git clone https://github.com/jcosta33/suspec-mcp
+cd suspec-mcp
+npm install
+npm run build
+```
+
+Pass both source entry points by absolute path so a GUI client does not depend on the shell's
+`PATH`.
+
+```json
 {
   "mcpServers": {
     "suspec": {
-      "command": "suspec-mcp",
-      "args": [
-        "--workspace", "/absolute/path/to/your/repo",
-        "--suspec-bin", "/absolute/path/to/suspec-cli/bin/suspec.js"
-      ]
+      "command": "/absolute/path/to/suspec-mcp/bin/suspec-mcp.js",
+      "args": ["--suspec-bin", "/absolute/path/to/suspec-cli/bin/suspec.js"]
     }
   }
 }
 ```
 
-Configuration precedence is flags > environment > cwd:
+This is strict JSON suitable for Claude Desktop's `claude_desktop_config.json` and other MCP clients.
 
-| flag | env | default | meaning |
-| --- | --- | --- | --- |
-| `--workspace <path>` | `SUSPEC_WORKSPACE` | the server's cwd | the ONE repo this server instance is bound to |
-| `--suspec-bin <path>` | `SUSPEC_BIN` | `suspec` on PATH | the CLI binary to shell out to |
+CLI-binary configuration precedence is flag > environment > `suspec` on PATH:
+
+| flag                  | env          | default          | meaning                  |
+| --------------------- | ------------ | ---------------- | ------------------------ |
+| `--suspec-bin <path>` | `SUSPEC_BIN` | `suspec` on PATH | the CLI binary to invoke |
+
+Each tool call supplies full artifact paths. The server does not discover or bind a repository root,
+workspace, configuration file, or artifact store.
 
 ## Security posture
 
-The server treats every client input as hostile:
+The server keeps the subprocess boundary narrow:
 
-- **Root confinement** — every path (the checked artifact AND both companions) must resolve
-  inside the bound workspace root: `..` traversal, absolute escapes, flag-shaped paths, and
-  symlinks pointing out of the root are all rejected before any subprocess runs.
+- **Full paths, passed through** — the checked artifact and companions must be absolute paths with no
+  control, format, or line-separator characters. They are passed to the CLI unchanged; the server
+  resolves no root or tree.
 - **Fixed argv** — the CLI is invoked with a fixed argument array, never a shell string.
-- **Allow-lists** — the one verb (`check`) and the three flags (`--spec`, `--task`,
-  `--contract`) are the only argv shapes that can reach the CLI; anything else throws inside
-  the adapter.
+- **Allow-lists** — only the `check` verb and its supported companion/contract flags can reach the
+  CLI; anything else throws inside the adapter.
 - **Read-only** — the CLI's check surface writes nothing, and the test suite pins that the
   adapter never passes a mutation-shaped flag.
 
+The MCP client can ask the server to read any path available to the server process. Run it with the
+same filesystem permissions and client trust boundary you intend to grant; use OS-level sandboxing
+when a narrower read boundary is required.
+
 ## Develop
 
+The fixture drift test runs the real CLI and fails when it cannot find one. Set `SUSPEC_BIN` to an
+absolute CLI source path; a sibling checkout whose package name is `suspec-cli` is also detected.
+Fixture generation rejects another package and records the CLI git HEAD, complete dirty-worktree
+hash, and binary hash in `test/fixtures/provenance.json` before comparing outputs.
+
 ```sh
+export SUSPEC_BIN=/absolute/path/to/suspec-cli/bin/suspec.js
 pnpm install
-pnpm test:run     # the suite (in-memory + real-stdio transport, against a stub CLI)
+pnpm test:run     # adapter tests use a stub; fixture drift uses the real CLI
 pnpm gate         # typecheck + lint + coverage (enforced thresholds) + build
 pnpm fixtures     # regenerate the contract fixtures from a real suspec binary
 ```

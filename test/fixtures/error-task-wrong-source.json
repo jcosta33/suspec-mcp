@@ -1,0 +1,4 @@
+{
+  "error": "Usage",
+  "message": "--task companion does not name handed spec `SPEC-demo-feature` in `source:`"
+}

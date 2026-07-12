@@ -2,9 +2,7 @@
 // allow-listed `suspec check --contract` invocation the suspec_get_checks tool uses (so keeping it
 // costs nothing and it can never drift from the tool). Read-only.
 
-import {
-  McpServer,
-} from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { invoke_suspec, type SuspecResult } from "./suspec/invoke.ts";
 import type { Ctx } from "./tools.ts";
@@ -32,13 +30,15 @@ export function register_resources(server: McpServer, ctx: Ctx): void {
         "The checks contract — the contract version + every core check's id, name, and severity.",
       mimeType: JSON_MIME,
     },
-    (uri) => ({
+    async (uri) => ({
       contents: [
         {
           uri: uri.href,
           mimeType: JSON_MIME,
           text: body_of(
-            invoke_suspec(ctx.env, "check", [], { bare: ["--contract"] }),
+            await invoke_suspec(ctx.env, "check", [], {
+              bare: ["--contract"],
+            }),
           ),
         },
       ],

@@ -44,7 +44,7 @@ function invocations(): string[][] {
 async function connect(
   bin: string = stubBin,
 ): Promise<{ client: Client; close: () => Promise<void> }> {
-  const server = create_server({ env: { bin, cwd: root }, root });
+  const server = create_server({ env: { bin, cwd: root } });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "t", version: "0" });
   await server.connect(st);

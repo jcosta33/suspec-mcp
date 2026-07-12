@@ -31,7 +31,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --packages=external --target=node18 --outfile=dist/index.js",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --packages=external --target=node22 --outfile=dist/index.js",
     "prepack": "pnpm run build",
     "test": "vitest",
     "test:run": "vitest run",

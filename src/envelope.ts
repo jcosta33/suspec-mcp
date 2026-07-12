@@ -12,7 +12,7 @@ import type { SuspecResult } from "./suspec/invoke.ts";
 
 const NO_VERDICT_NOTE =
   "suspec-mcp relays the CLI's recorded facts — diagnostics, severity levels, exit codes — and issues " +
-  "no verdict. What a finding means for the work is the human's call.";
+  "no verdict. What those facts mean for the work is the human's call.";
 
 export type Envelope = Readonly<{
   ok: boolean;
@@ -30,7 +30,7 @@ export type Envelope = Readonly<{
 export const ENVELOPE_OUTPUT_SHAPE = {
   // RUNNABILITY, never a result: true = the CLI ran and returned a parseable success payload; false =
   // it returned a structured error. Deliberately NOT tied to the CLI's exit code or diagnostic level —
-  // an exit-1/2 check that found problems still ran fine (ok:true) and carries its findings in `data`
+  // an exit-1/2 check that found problems still ran fine (ok:true) and carries its diagnostics in `data`
   // (`data.level`, diagnostics) + `source.exitCode`. Reading ok:true as "no problems" is a misread.
   ok: z
     .boolean()
@@ -109,10 +109,11 @@ export function tool_result(envelope: Envelope): {
   content: { type: "text"; text: string }[];
   structuredContent: Record<string, unknown>;
 } {
-  // `ran` / `not runnable here` describes RUNNABILITY (did the CLI execute and return parseable JSON),
-  // never a check result — deliberately not "ok"/"pass", so a client cannot read the summary as a verdict.
+  // The CLI ran for both envelope variants. A structured error means it refused this invocation,
+  // not that the binary failed to launch; launch errors never reach this function.
+  const runState = envelope.ok ? "ran" : "ran; CLI refused invocation";
   const summaryLines = [
-    `${envelope.source.command} → ${envelope.ok ? "ran" : "not runnable here"} (no verdict issued)`,
+    `${envelope.source.command} → ${runState} (no verdict issued)`,
   ];
   if (envelope.note !== undefined) {
     summaryLines.push(envelope.note);
@@ -121,12 +122,15 @@ export function tool_result(envelope: Envelope): {
     { type: "text", text: summaryLines.join("\n") },
   ];
   // Text-only clients (opencode today) render `content[].text` and DROP `structuredContent`, so the
-  // payload below is invisible there unless we mirror it into a text block — the tool otherwise goes
-  // silently blind on such a client (suspec-works #88). structuredContent-aware clients get the payload
+  // payload below is invisible there unless we mirror it into a text block. structuredContent-aware
+  // clients get the payload
   // twice; universal visibility is the deliberate trade (a tool whose data no mainstream client can see
   // is broken DX regardless of who is spec-correct). Guarded so an empty/absent payload emits nothing.
   if (envelope.data !== undefined && envelope.data !== null) {
-    content.push({ type: "text", text: JSON.stringify(envelope.data, null, 2) });
+    content.push({
+      type: "text",
+      text: JSON.stringify(envelope.data, null, 2),
+    });
   }
   return {
     content,
@@ -150,9 +154,9 @@ export function respond(
   return tool_result(build_envelope(result, opts));
 }
 
-// An adapter-level failure (the `suspec` binary is missing / emitted no JSON) or a rejected request (a
-// path outside root) is a tool error: text + `isError`, with NO structuredContent — so it does not have
-// to satisfy (and cannot violate) the success outputSchema. An error inherently issues no verdict.
+// An adapter-level failure (the `suspec` binary is missing / emitted no JSON) or an invalid path is a
+// tool error: text + `isError`, with NO structuredContent — so it does not have to satisfy (and cannot
+// violate) the success outputSchema. An error inherently issues no verdict.
 export function tool_error(message: string): {
   content: { type: "text"; text: string }[];
   isError: true;

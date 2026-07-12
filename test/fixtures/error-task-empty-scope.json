@@ -1,0 +1,4 @@
+{
+  "error": "Usage",
+  "message": "--task companion must name at least one requirement in `scope:`"
+}

@@ -7,7 +7,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // The server actually starts and serves over REAL stdio (not just the in-memory transport).
-// Deterministic: the spawned server is pointed at the stub `suspec` binary and a temp workspace.
+// Deterministic: the spawned server is pointed at the stub `suspec` binary and a temporary root.
 const here = dirname(fileURLToPath(import.meta.url));
 const serverEntry = join(here, "..", "src", "index.ts");
 const stubBin = join(here, "fixtures", "stub-suspec.mjs");
@@ -31,8 +31,6 @@ describe("real stdio transport", () => {
         "--experimental-strip-types",
         "--disable-warning=ExperimentalWarning",
         serverEntry,
-        "--workspace",
-        root,
         "--suspec-bin",
         stubBin,
       ],
@@ -57,7 +55,7 @@ describe("real stdio transport", () => {
 
       const check = (await client.callTool({
         name: "suspec_check_file",
-        arguments: { path: "specs/x.md" },
+        arguments: { path: join(root, "specs", "x.md") },
       })) as {
         structuredContent: {
           noVerdictIssued: boolean;
@@ -65,7 +63,9 @@ describe("real stdio transport", () => {
         };
       };
       expect(check.structuredContent.noVerdictIssued).toBe(true);
-      expect(check.structuredContent.data.diagnostics.length).toBeGreaterThan(0);
+      expect(check.structuredContent.data.diagnostics.length).toBeGreaterThan(
+        0,
+      );
     } finally {
       await client.close();
     }
