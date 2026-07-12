@@ -78,7 +78,7 @@ const list = (head, name) => {
   if (index < 0) return [];
   const inline = lines[index].replace(new RegExp(`^${name}:\\s*`), "").trim();
   if (inline.length > 0) {
-    return inline
+    return normalizeScalar(inline)
       .replace(/^\[/, "")
       .replace(/\]$/, "")
       .split(",")

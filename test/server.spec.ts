@@ -276,6 +276,30 @@ describe("suspec-mcp server", () => {
     }
   });
 
+  it("keeps stub parity for commented inline task lists", async () => {
+    writeFileSync(
+      artifactPath("tasks/task.md"),
+      "---\ntype: task\nid: TASK-x\nsource: [SPEC-x] # source identity\nscope: [AC-001] # review scope\n---\n",
+    );
+    const { client, close } = await connectClient();
+    try {
+      const result = (await client.callTool({
+        name: "suspec_check_file",
+        arguments: {
+          path: artifactPath("reviews/review.md"),
+          spec: artifactPath("specs/a/spec.md"),
+          task: artifactPath("tasks/task.md"),
+        },
+      })) as {
+        structuredContent: { ok: boolean; data: { level: string } };
+      };
+      expect(result.structuredContent.ok).toBe(true);
+      expect(result.structuredContent.data.level).toBe("clean");
+    } finally {
+      await close();
+    }
+  });
+
   it("surfaces malformed task companions as the CLI's blocking structured errors", async () => {
     const malformed = [
       {
