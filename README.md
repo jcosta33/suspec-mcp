@@ -98,7 +98,8 @@ CLI-binary configuration precedence is flag > environment > `suspec` on PATH:
 | `--suspec-bin <path>` | `SUSPEC_BIN` | `suspec` on PATH | the CLI binary to invoke |
 
 Each tool call supplies full artifact paths. The server does not discover or bind a repository root,
-workspace, configuration file, or artifact store.
+workspace, configuration file, or artifact store. Callers may pass ordinary Suspec artifacts from
+`~/.agents/artifacts/<workspace>/`; the server treats that root like any other explicit path.
 
 ## Security posture
 
