@@ -70,8 +70,9 @@ package is published; install both from source. After installing the CLI:
 ```sh
 git clone https://github.com/jcosta33/suspec-mcp
 cd suspec-mcp
-npm install
-npm run build
+corepack enable
+pnpm install --frozen-lockfile
+pnpm build
 ```
 
 Pass both source entry points by absolute path so a GUI client does not depend on the shell's
