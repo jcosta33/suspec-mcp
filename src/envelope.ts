@@ -1,6 +1,6 @@
 // The result envelope every tool returns. Two invariants live here (both typed + tested):
 //   1. `noVerdictIssued: true` — a HARD, tested invariant. suspec-mcp relays the CLI's facts and never
-//      adds a Pass/Fail/approve/merge result of its own.
+//      adds a assessment or acceptance result of its own.
 //   2. `data` is the CLI's `--json` output VERBATIM (or, in concise mode, a pure shape-reduction of
 //      it) — including the CLI's own honest fields (a report's `level`, a diagnostic's `severity`).
 //      suspec-mcp passes the CLI's recorded facts through; it does not scrub them and does not

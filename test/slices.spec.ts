@@ -61,25 +61,25 @@ describe("slice_check_file", () => {
 describe("slice_contract", () => {
   it("keeps version + each check's {id, severity}; drops the human-readable name", () => {
     const out = slice_contract({
-      version: "0.16.0",
+      version: "0.17.0",
       checks: [{ id: "C001", name: "unique-ids", severity: "hard-error" }],
     }) as { version: string; checks: Record<string, unknown>[] };
-    expect(out.version).toBe("0.16.0");
+    expect(out.version).toBe("0.17.0");
     expect(out.checks[0]).toEqual({ id: "C001", severity: "hard-error" });
   });
 
   it("falls back on a non-object payload and tolerates a malformed check", () => {
     expect(slice_contract(undefined)).toBe(undefined);
     expect(slice_contract("nope")).toBe("nope");
-    const out = slice_contract({ version: "0.16.0", checks: [null] }) as {
+    const out = slice_contract({ version: "0.17.0", checks: [null] }) as {
       checks: unknown[];
     };
     expect(out.checks).toHaveLength(1);
   });
 
   it("defaults an absent checks list to [] (the as_array fallback) instead of throwing", () => {
-    expect(slice_contract({ version: "0.16.0" })).toEqual({
-      version: "0.16.0",
+    expect(slice_contract({ version: "0.17.0" })).toEqual({
+      version: "0.17.0",
       checks: [],
     });
   });

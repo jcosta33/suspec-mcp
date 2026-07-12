@@ -195,21 +195,21 @@ const NOT_A_SPEC = [
   "",
 ].join("\n");
 
-// A clean task-keyed review: the Pass row carries evidence and a verify block matching the spec's
+// A clean task-keyed review: the Supported row carries evidence and a verify block matching the spec's
 // named command.
 const REVIEW = [
   "---",
   "type: review",
   "id: REVIEW-demo",
   "task: TASK-demo",
-  "status: needs-human",
+  "decision: pending",
   "---",
   "",
   "## Requirement coverage",
   "",
-  "| ID | Result | Evidence | Human attention |",
-  "|---|---|---|---|",
-  "| AC-001 | Pass | p | no |",
+  "| ID | Assessment | Evidence |",
+  "|---|---|---|",
+  "| AC-001 | Supported | p |",
   "",
   '```verify id=AC-001 cmd="git --version" result=pass',
   "ok",
@@ -223,14 +223,14 @@ const REVIEW_NOTASK = [
   "---",
   "type: review",
   "id: REVIEW-demo-notask",
-  "status: needs-human",
+  "decision: pending",
   "---",
   "",
   "## Requirement coverage",
   "",
-  "| ID | Result | Evidence | Human attention |",
-  "|---|---|---|---|",
-  "| AC-001 | Pass | p | no |",
+  "| ID | Assessment | Evidence |",
+  "|---|---|---|",
+  "| AC-001 | Supported | p |",
   "",
   '```verify id=AC-001 cmd="git --version" result=pass',
   "ok",
@@ -245,7 +245,7 @@ const REVIEW_TASK_LIST = [
   "task:",
   "  - TASK-demo",
   "  - TASK-other",
-  "status: needs-human",
+  "decision: pending",
   "---",
   "",
   "## Requirement coverage",
@@ -261,28 +261,28 @@ const REVIEW_QUOTED_BOM = [
   "\ufeff---",
   'type: "review"',
   "id: REVIEW-demo-quoted-bom",
-  "status: needs-human",
+  "decision: pending",
   "---",
   "",
   "## Requirement coverage",
   "",
 ].join("\n");
 
-// A diagnostic-carrying review: a Pass row with an EMPTY Evidence cell and no verify block, so the
+// A diagnostic-carrying review: a Supported row with an EMPTY Evidence cell and no verify block, so the
 // captured report pins the diagnostic fields (code/severity/message/line) with real check output.
 const REVIEW_BAD = [
   "---",
   "type: review",
   "id: REVIEW-demo",
   "task: TASK-demo",
-  "status: needs-human",
+  "decision: pending",
   "---",
   "",
   "## Requirement coverage",
   "",
-  "| ID | Result | Evidence | Human attention |",
-  "|---|---|---|---|",
-  "| AC-001 | Pass |  | no |",
+  "| ID | Assessment | Evidence |",
+  "|---|---|---|",
+  "| AC-001 | Supported |  |",
   "",
 ].join("\n");
 

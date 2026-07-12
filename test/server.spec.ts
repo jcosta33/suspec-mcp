@@ -843,7 +843,7 @@ describe("suspec-mcp server", () => {
         };
       };
       expect(r.structuredContent.ok).toBe(true);
-      expect(r.structuredContent.data.version).toBe("0.16.0");
+      expect(r.structuredContent.data.version).toBe("0.17.0");
       expect(r.structuredContent.data.checks.length).toBeGreaterThan(0);
       expect(invocations()).toContainEqual(["check", "--contract", "--json"]);
     } finally {

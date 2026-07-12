@@ -5,7 +5,7 @@ checking.
 
 It is a thin, hardened adapter over the [`suspec` CLI](https://github.com/jcosta33/suspec-cli):
 every tool call shells out to `suspec check --json` and relays the CLI's recorded diagnostics,
-severity levels, and exit codes under a **no-verdict envelope**. The server never adds a Pass/Fail,
+severity levels, and exit codes under a **no-verdict envelope**. The server never adds a assessment or acceptance,
 approval, or merge decision of its own; the human decides what those facts mean for the work.
 
 ## Why it exists

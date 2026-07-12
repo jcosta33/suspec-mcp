@@ -51,7 +51,7 @@ describe("real stdio transport", () => {
         };
       };
       expect(checks.structuredContent.noVerdictIssued).toBe(true);
-      expect(checks.structuredContent.data.version).toBe("0.16.0");
+      expect(checks.structuredContent.data.version).toBe("0.17.0");
 
       const check = (await client.callTool({
         name: "suspec_check_file",

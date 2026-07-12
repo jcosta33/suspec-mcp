@@ -1,5 +1,5 @@
 {
-  "version": "0.16.0",
+  "version": "0.17.0",
   "checks": [
     {
       "id": "C001",
@@ -19,16 +19,6 @@
     {
       "id": "C004",
       "name": "one-strength-word",
-      "severity": "warning"
-    },
-    {
-      "id": "C005",
-      "name": "non-goals-present",
-      "severity": "warning"
-    },
-    {
-      "id": "C006",
-      "name": "open-questions-present",
       "severity": "warning"
     },
     {
@@ -78,7 +68,7 @@
     },
     {
       "id": "C016",
-      "name": "pass-needs-evidence",
+      "name": "supported-needs-evidence",
       "severity": "hard-error"
     },
     {

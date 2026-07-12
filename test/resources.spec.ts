@@ -109,7 +109,7 @@ describe("suspec-mcp resources", () => {
         version: string;
         checks: { id: string }[];
       };
-      expect(parsed.version).toBe("0.16.0");
+      expect(parsed.version).toBe("0.17.0");
       expect(parsed.checks.length).toBeGreaterThan(0);
       expect(invocations()).toEqual([["check", "--contract", "--json"]]);
     } finally {

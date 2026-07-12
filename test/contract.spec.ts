@@ -110,7 +110,7 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     );
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      // the real capture carries the empty-evidence Pass row's diagnostic
+      // the real capture carries the empty-evidence Supported row's diagnostic
       expect(parsed.data.diagnostics.length).toBeGreaterThan(0);
       expect(parsed.data.diagnostics.map((d) => d.code)).toContain("C016");
       expect(parsed.data.level).toBe("blocking");

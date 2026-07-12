@@ -101,7 +101,7 @@ if (verb !== "check") {
 
 if (argv.includes("--contract")) {
   emit({
-    version: "0.16.0",
+    version: "0.17.0",
     checks: [
       { id: "C001", name: "unique-ids", severity: "hard-error" },
       { id: "C004", name: "one-strength-word", severity: "warning" },
