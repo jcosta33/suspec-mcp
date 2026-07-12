@@ -21,24 +21,28 @@ describe("parse_config", () => {
     ).toBe("/flag/bin");
   });
 
-  it("accepts the equals form and ignores an empty value", () => {
+  it("accepts the equals form", () => {
     expect(parse_config(["--suspec-bin=/eq/bin"], {}).bin).toBe("/eq/bin");
-    expect(parse_config(["--suspec-bin="], {}).bin).toBe("suspec");
   });
 
-  it("does not consume a flag-shaped token as the binary value", () => {
-    expect(parse_config(["--suspec-bin", "--other"], {}).bin).toBe("suspec");
+  it("rejects a missing or empty binary path", () => {
+    expect(() => parse_config(["--suspec-bin"], {})).toThrow(
+      "--suspec-bin requires a non-empty path",
+    );
+    expect(() => parse_config(["--suspec-bin="], {})).toThrow(
+      "--suspec-bin requires a non-empty path",
+    );
+    expect(() => parse_config(["--suspec-bin", "--other"], {})).toThrow(
+      "--suspec-bin requires a non-empty path",
+    );
   });
 
-  it("rejects the retired workspace flag and environment variable", () => {
-    expect(() => parse_config(["--workspace", "/repo"], {})).toThrow(
-      /full artifact paths/,
+  it("rejects unknown arguments", () => {
+    expect(() => parse_config(["--other"], {})).toThrow(
+      "unknown argument: --other",
     );
-    expect(() => parse_config(["--workspace=/repo"], {})).toThrow(
-      /full artifact paths/,
-    );
-    expect(() => parse_config([], { SUSPEC_WORKSPACE: "/repo" })).toThrow(
-      /full artifact paths/,
+    expect(() => parse_config(["artifact.md"], {})).toThrow(
+      "unknown argument: artifact.md",
     );
   });
 });

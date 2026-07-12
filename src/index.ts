@@ -9,37 +9,32 @@ import { create_server } from "./server.ts";
 
 export type Config = Readonly<{ bin: string }>;
 
-const RETIRED_WORKSPACE_MESSAGE =
-  "--workspace and SUSPEC_WORKSPACE are retired; suspec-mcp tools require explicit full artifact paths";
-
 // Config order for the CLI binary: flag, environment, then `suspec` on PATH.
 export function parse_config(
   argv: readonly string[],
   env: NodeJS.ProcessEnv,
 ): Config {
-  if (env.SUSPEC_WORKSPACE !== undefined) {
-    throw new Error(RETIRED_WORKSPACE_MESSAGE);
-  }
   let bin = env.SUSPEC_BIN ?? "suspec";
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
-    if (token === "--workspace" || token.startsWith("--workspace=")) {
-      throw new Error(RETIRED_WORKSPACE_MESSAGE);
-    }
     if (token.startsWith("--suspec-bin=")) {
       const value = token.slice("--suspec-bin=".length);
-      if (value.length > 0) {
-        bin = value;
+      if (value.length === 0) {
+        throw new Error("--suspec-bin requires a non-empty path");
       }
+      bin = value;
       continue;
     }
     if (token === "--suspec-bin") {
       const value = argv[index + 1];
-      if (value !== undefined && !value.startsWith("--")) {
-        bin = value;
-        index += 1;
+      if (value === undefined || value.startsWith("--")) {
+        throw new Error("--suspec-bin requires a non-empty path");
       }
+      bin = value;
+      index += 1;
+      continue;
     }
+    throw new Error(`unknown argument: ${token}`);
   }
   return { bin };
 }

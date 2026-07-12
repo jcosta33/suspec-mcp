@@ -188,7 +188,7 @@ if (type === "review") {
   const specType = scalar(specHead, "type");
   if (specType !== undefined && specType !== "spec") {
     fail(
-      `--spec companion must have \`type: spec\` or omit \`type:\` for supported legacy input; received ${specType}`,
+      `--spec companion must have \`type: spec\` or omit \`type:\`; received ${specType}`,
     );
   }
   if (task !== undefined) {
