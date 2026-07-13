@@ -7,7 +7,7 @@
 
 import { z } from "zod";
 
-export const SUPPORTED_CONTRACT_VERSION = "0.18.0" as const;
+export const SUPPORTED_CONTRACT_VERSION = "0.19.0" as const;
 
 export const SUPPORTED_CHECKS = [
   { id: "C001", name: "unique-ids", severity: "hard-error" },
@@ -120,7 +120,7 @@ export const UncheckedArtifactSchema = z
   .object({
     level: z.literal("clean"),
     path: z.string(),
-    type: z.enum(["inventory", "audit", "research", "inspection"]),
+    type: z.enum(["inventory", "audit", "research"]),
     checked: z.literal(false),
   })
   .passthrough()

@@ -366,7 +366,7 @@ describe("suspec-mcp server", () => {
       })) as {
         structuredContent: { data: { version: string }; responseFormat: string };
       };
-      expect(result.structuredContent.data.version).toBe("0.18.0");
+    expect(result.structuredContent.data.version).toBe("0.19.0");
       expect(result.structuredContent.responseFormat).toBe("detailed");
       expect(invocations()).toEqual([["check", "--contract", "--json"]]);
     } finally {

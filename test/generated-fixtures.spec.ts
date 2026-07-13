@@ -88,7 +88,7 @@ describe("fixture capture exit assertions", () => {
       "json",
       "contract",
       0,
-      JSON.stringify({ version: "0.18.0", checks: [] }),
+      JSON.stringify({ version: "0.19.0", checks: [] }),
     ],
     ["jsonl", "clean", 0, JSON.stringify(report("clean", "clean.md"))],
     [

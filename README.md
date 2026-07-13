@@ -4,7 +4,7 @@ An MCP stdio server that gives shell-less agent clients access to Suspec's deter
 checking.
 
 It is a thin adapter over the [`suspec` CLI](https://github.com/jcosta33/suspec-cli). It requires
-checks contract `0.18.0`, validates every CLI JSON document at runtime, and returns the CLI's ordered
+checks contract `0.19.0`, validates every CLI JSON document at runtime, and returns the CLI's ordered
 reports and exit code.
 
 ## Why it exists
@@ -28,7 +28,7 @@ cross-file checks such as C002.
 
 The CLI refuses a missing or unreferenced companion with a blocking error rather than
 silently checking less; that refusal surfaces as `ok: false` with the CLI's own message.
-Recognized unchecked types (`inventory`, `audit`, `research`, and `inspection`) come back as
+Recognized unchecked types (`inventory`, `audit`, and `research`) come back as
 `checked: false`; missing and unknown types are rejected by the CLI.
 Each per-artifact result repeats its recognized `type`; only the optional final `(file set)` C002
 report has no artifact type.
@@ -49,7 +49,7 @@ The checks contract the CLI holds artifacts to (`suspec check --contract`): the 
 version plus every core check's id, name, and severity. Also served as the fixed resource
 `suspec://checks`.
 
-The startup compatibility probe and every resource read require the exact `0.18.0` contract at exit
+The startup compatibility probe and every resource read require the exact `0.19.0` contract at exit
 0. A failed resource invocation throws instead of serving an error document as resource content.
 
 ## The envelope
