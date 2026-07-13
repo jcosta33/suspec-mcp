@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  rmSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { resolveSuspecBin } from "../scripts/resolve-suspec-bin.mjs";
 // @ts-expect-error — the fixture generator exports its pure assertion seam without a .d.ts
 import { assertCaptureExpectation } from "../scripts/generate-fixtures.mjs";
+import { invoke_suspec } from "../src/suspec/invoke.ts";
 
 // The fixtures stay GENERATED, not hand-edited. This test re-runs scripts/generate-fixtures.mjs
 // against the REAL `suspec` binary into a temp dir, then asserts the checked-in fixtures still match
@@ -174,4 +181,35 @@ describe("the contract fixtures stay generated from the real binary", () => {
     // under the parallel coverage run. Not a race — a genuinely slow subprocess, so a longer
     // per-test timeout is the right fix.
   }, 60_000);
+
+  it("accepts duplicate and symlink-alias paths deduplicated by the real CLI", async () => {
+    expect(suspecBin).not.toBeNull();
+    if (suspecBin === null) return;
+
+    const tmp = mkdtempSync(join(tmpdir(), "suspec-mcp-alias-"));
+    try {
+      const specPath = join(tmp, "spec.md");
+      const aliasPath = join(tmp, "alias.md");
+      writeFileSync(
+        specPath,
+        "---\ntype: spec\nid: SPEC-alias\nstatus: ready\nsources: [ISSUE-1]\n---\n\n## Intent\n\nCheck alias handling.\n\n## Requirements\n\n### AC-001\nThe tool MUST check one file once.\nVerify with: `true`\n",
+      );
+      symlinkSync(specPath, aliasPath);
+
+      const result = await invoke_suspec(
+        { bin: suspecBin, cwd: tmp },
+        "check",
+        [specPath, specPath, aliasPath],
+        { expected: "reports" },
+      );
+      expect(result.kind).toBe("ok");
+      if (result.kind === "ok") {
+        expect(result.data).toEqual([
+          expect.objectContaining({ path: specPath, level: "clean" }),
+        ]);
+      }
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });

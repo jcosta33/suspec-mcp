@@ -7,6 +7,8 @@
 // repos only through the public, tested JSON interface.
 
 import { execFile, type ExecFileException } from "node:child_process";
+import { statSync } from "node:fs";
+import { resolve } from "node:path";
 import { z } from "zod";
 
 import {
@@ -110,6 +112,25 @@ function validation_message(error: z.ZodError): string {
     })
     .join("; ");
   return `CLI JSON violates the supported contract: ${issues}`;
+}
+
+function distinct_primary_paths(
+  paths: readonly string[],
+  cwd: string,
+): string[] {
+  const seen = new Set<string>();
+  return paths.filter((path) => {
+    let identity: string;
+    try {
+      const stats = statSync(resolve(cwd, path), { bigint: true });
+      identity = `${stats.dev}:${stats.ino}`;
+    } catch {
+      identity = resolve(cwd, path);
+    }
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
 }
 
 export function invoke_suspec(
@@ -254,13 +275,14 @@ export function invoke_suspec(
         level: keyof typeof exitByLevel;
         path: string;
       }[];
-      const primaryPathsMatch = positional.every(
+      const expectedPrimaryPaths = distinct_primary_paths(positional, env.cwd);
+      const primaryPathsMatch = expectedPrimaryPaths.every(
         (path, index) => reports[index]?.path === path,
       );
-      const hasNoSetReport = reports.length === positional.length;
+      const hasNoSetReport = reports.length === expectedPrimaryPaths.length;
       const hasOneFinalSetReport =
-        positional.length > 1 &&
-        reports.length === positional.length + 1 &&
+        expectedPrimaryPaths.length > 1 &&
+        reports.length === expectedPrimaryPaths.length + 1 &&
         reports.at(-1)?.path === "(file set)";
       if (!primaryPathsMatch || (!hasNoSetReport && !hasOneFinalSetReport)) {
         return {
