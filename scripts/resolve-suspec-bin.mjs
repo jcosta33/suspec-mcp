@@ -15,7 +15,21 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 function git(root, args, encoding = "utf8") {
-  return execFileSync("git", ["-C", root, ...args], { encoding });
+  return execFileSync("git", ["-C", root, ...args], {
+    encoding,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+function isGitRoot(root) {
+  try {
+    return (
+      realpathSync(root) ===
+      realpathSync(git(root, ["rev-parse", "--show-toplevel"]).trim())
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function inspectSuspecBin(value) {
@@ -35,12 +49,19 @@ export function inspectSuspecBin(value) {
   }
   const declaredValue = pkg.bin?.suspec;
   if (typeof declaredValue !== "string" || declaredValue.length === 0) {
-    throw new Error("suspec-cli package must declare a nonempty bin.suspec path");
+    throw new Error(
+      "suspec-cli package must declare a nonempty bin.suspec path",
+    );
   }
   const declaredRequest = resolve(packageRoot, declaredValue);
   const packagePrefix = `${packageRoot}${sep}`;
-  if (!declaredRequest.startsWith(packagePrefix) || !existsSync(declaredRequest)) {
-    throw new Error(`suspec-cli declared bin.suspec is missing or escapes its package: ${declaredValue}`);
+  if (
+    !declaredRequest.startsWith(packagePrefix) ||
+    !existsSync(declaredRequest)
+  ) {
+    throw new Error(
+      `suspec-cli declared bin.suspec is missing or escapes its package: ${declaredValue}`,
+    );
   }
   const declaredBin = realpathSync(declaredRequest);
   if (declaredBin !== bin) {
@@ -100,8 +121,29 @@ export function resolveSuspecBin(repoRoot) {
   }
 
   const parent = resolve(repoRoot, "..");
-  const candidates = [];
+  const candidateIn = (dir) => {
+    const bin = join(dir, "bin", "suspec.js");
+    const pkg = join(dir, "package.json");
+    if (!existsSync(bin) || !existsSync(pkg)) return null;
+    try {
+      const name = JSON.parse(readFileSync(pkg, "utf8")).name;
+      if (name !== "suspec-cli") return null;
+      inspectSuspecBin(bin);
+      return bin;
+    } catch {
+      return null;
+    }
+  };
+
   const preferred = join(parent, "suspec-cli");
+  const preferredBin = candidateIn(preferred);
+  if (preferredBin !== null) return preferredBin;
+
+  // Arbitrary sibling discovery is a source-checkout convenience. A packaged MCP copy has no
+  // bounded workspace to scan; explicit SUSPEC_BIN or the conventional sibling remains available.
+  if (!isGitRoot(repoRoot)) return null;
+
+  const candidates = [];
   let entries;
   try {
     entries = readdirSync(parent, { withFileTypes: true });
@@ -111,17 +153,8 @@ export function resolveSuspecBin(repoRoot) {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const dir = join(parent, entry.name);
-    const bin = join(dir, "bin", "suspec.js");
-    const pkg = join(dir, "package.json");
-    if (!existsSync(bin) || !existsSync(pkg)) continue;
-    try {
-      const name = JSON.parse(readFileSync(pkg, "utf8")).name;
-      if (name === "suspec-cli") candidates.push(bin);
-    } catch {
-      // unreadable package.json — not a candidate
-    }
+    const bin = candidateIn(dir);
+    if (bin !== null) candidates.push(bin);
   }
-  const preferredBin = join(preferred, "bin", "suspec.js");
-  if (candidates.includes(preferredBin)) return preferredBin;
   return candidates[0] ?? null;
 }

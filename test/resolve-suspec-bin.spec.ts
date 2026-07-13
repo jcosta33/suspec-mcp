@@ -4,6 +4,7 @@ import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -11,7 +12,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // @ts-expect-error — plain-JS helper shared with fixture generation (no .d.ts on purpose)
-import { inspectSuspecBin } from "../scripts/resolve-suspec-bin.mjs";
+import {
+  inspectSuspecBin,
+  resolveSuspecBin,
+} from "../scripts/resolve-suspec-bin.mjs";
 
 describe("suspec fixture binary provenance", () => {
   it("rejects an executable from an unrelated package before fixture generation", () => {
@@ -34,7 +38,9 @@ describe("suspec fixture binary provenance", () => {
   });
 
   it("rejects an unrelated executable inside the suspec-cli package", () => {
-    const root = mkdtempSync(join(tmpdir(), "suspec-mcp-same-package-wrong-bin-"));
+    const root = mkdtempSync(
+      join(tmpdir(), "suspec-mcp-same-package-wrong-bin-"),
+    );
     try {
       mkdirSync(join(root, "bin"));
       writeFileSync(
@@ -55,7 +61,15 @@ describe("suspec fixture binary provenance", () => {
       execFileSync("git", ["add", "."], { cwd: root });
       execFileSync(
         "git",
-        ["-c", "user.name=Suspec Test", "-c", "user.email=test@example.com", "commit", "-qm", "fixture"],
+        [
+          "-c",
+          "user.name=Suspec Test",
+          "-c",
+          "user.email=test@example.com",
+          "commit",
+          "-qm",
+          "fixture",
+        ],
         { cwd: root },
       );
 
@@ -64,6 +78,56 @@ describe("suspec fixture binary provenance", () => {
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not scan arbitrary siblings from a packaged MCP copy", () => {
+    const parent = mkdtempSync(join(tmpdir(), "suspec-mcp-resolver-"));
+    const original = process.env.SUSPEC_BIN;
+    try {
+      delete process.env.SUSPEC_BIN;
+      const repoRoot = join(parent, "mcp");
+      const lookalike = join(parent, "lookalike");
+      mkdirSync(repoRoot);
+      mkdirSync(join(lookalike, "bin"), { recursive: true });
+      writeFileSync(
+        join(lookalike, "package.json"),
+        JSON.stringify({
+          name: "suspec-cli",
+          version: "1.0.0",
+          bin: { suspec: "./bin/suspec.js" },
+        }),
+      );
+      writeFileSync(
+        join(lookalike, "bin", "suspec.js"),
+        "#!/usr/bin/env node\n",
+      );
+      execFileSync("git", ["init", "-q"], { cwd: lookalike });
+      execFileSync("git", ["add", "."], { cwd: lookalike });
+      execFileSync(
+        "git",
+        [
+          "-c",
+          "user.name=Suspec Test",
+          "-c",
+          "user.email=test@example.com",
+          "commit",
+          "-qm",
+          "fixture",
+        ],
+        { cwd: lookalike },
+      );
+
+      expect(resolveSuspecBin(repoRoot)).toBeNull();
+      const preferred = join(parent, "suspec-cli");
+      renameSync(lookalike, preferred);
+      expect(resolveSuspecBin(repoRoot)).toBe(
+        join(preferred, "bin", "suspec.js"),
+      );
+    } finally {
+      if (original === undefined) delete process.env.SUSPEC_BIN;
+      else process.env.SUSPEC_BIN = original;
+      rmSync(parent, { recursive: true, force: true });
     }
   });
 });
