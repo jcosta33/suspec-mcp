@@ -9,7 +9,11 @@
 import { execFile, type ExecFileException } from "node:child_process";
 import { z } from "zod";
 
-import { SuspecErrorSchema } from "./contract.ts";
+import {
+  CheckFileSchema,
+  ContractSchema,
+  SuspecErrorSchema,
+} from "./contract.ts";
 
 export type SuspecEnv = Readonly<{
   bin: string; // the `suspec` binary (env SUSPEC_BIN, else 'suspec' on PATH)
@@ -115,8 +119,7 @@ export function invoke_suspec(
   opts: {
     flags?: Readonly<Record<string, string>>;
     bare?: readonly string[];
-    schema: z.ZodTypeAny;
-    output: "json" | "jsonl";
+    expected: "contract" | "reports";
   },
 ): Promise<SuspecResult> {
   if (!ALLOWED_VERBS.has(verb)) {
@@ -180,7 +183,7 @@ export function invoke_suspec(
       try {
         parsed =
           stdout.length > 0
-            ? opts.output === "jsonl"
+            ? opts.expected === "reports"
               ? parse_jsonl(stdout)
               : parse_json(stdout)
             : undefined;
@@ -195,8 +198,10 @@ export function invoke_suspec(
           message: `\`${command}\` produced no parseable JSON (exit ${exitCode})${stderr ? `: ${stderr}` : ""}`,
         };
       }
-      const wireSchema = z.union([opts.schema, SuspecErrorSchema]);
-      const documents = opts.output === "jsonl" ? (parsed as unknown[]) : [parsed];
+      const payloadSchema =
+        opts.expected === "contract" ? ContractSchema : CheckFileSchema;
+      const wireSchema = z.union([payloadSchema, SuspecErrorSchema]);
+      const documents = opts.expected === "reports" ? (parsed as unknown[]) : [parsed];
       const validated: unknown[] = [];
       for (const document of documents) {
         const result = wireSchema.safeParse(document);
@@ -209,20 +214,57 @@ export function invoke_suspec(
         }
         validated.push(result.data);
       }
-      const data = opts.output === "jsonl" ? validated : validated[0];
-      const hasStructuredError = validated.some(
+      const data = opts.expected === "reports" ? validated : validated[0];
+      const structuredErrorCount = validated.filter(
         (document) => SuspecErrorSchema.safeParse(document).success,
-      );
-      if (hasStructuredError && exitCode !== 2) {
+      ).length;
+      if (
+        structuredErrorCount > 0 &&
+        structuredErrorCount < validated.length
+      ) {
+        return {
+          kind: "launch-error",
+          invocation,
+          message: `\`${command}\` emitted a mixed report/structured error stream`,
+        };
+      }
+      if (structuredErrorCount === validated.length && exitCode !== 2) {
         return {
           kind: "launch-error",
           invocation,
           message: `\`${command}\` emitted a structured error at exit ${exitCode}; structured errors require exit 2`,
         };
       }
-      return hasStructuredError
-        ? { kind: "structured-error", invocation, data }
-        : { kind: "ok", invocation, data };
+      if (structuredErrorCount === validated.length) {
+        return { kind: "structured-error", invocation, data };
+      }
+      if (opts.expected === "contract") {
+        if (exitCode !== 0) {
+          return {
+            kind: "launch-error",
+            invocation,
+            message: `\`${command}\` emitted a checks contract at exit ${exitCode}; contracts require exit 0`,
+          };
+        }
+        return { kind: "ok", invocation, data };
+      }
+
+      const exitByLevel = { clean: 0, warning: 1, blocking: 2 } as const;
+      const reports = validated as { level: keyof typeof exitByLevel }[];
+      const expectedExit = Math.max(
+        ...reports.map((report) => exitByLevel[report.level]),
+      );
+      if (exitCode !== expectedExit) {
+        const maxLevel = (["clean", "warning", "blocking"] as const)[
+          expectedExit
+        ];
+        return {
+          kind: "launch-error",
+          invocation,
+          message: `\`${command}\` emitted a ${maxLevel} report stream at exit ${exitCode}; ${maxLevel} reports require exit ${expectedExit}`,
+        };
+      }
+      return { kind: "ok", invocation, data };
     })
     .catch(
       (caught: unknown): SuspecResult => ({

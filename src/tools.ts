@@ -8,9 +8,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { isAbsolute } from "node:path";
 
 import { type SuspecEnv, invoke_suspec } from "./suspec/invoke.ts";
+import { invoke_supported_contract } from "./suspec/compatibility.ts";
 import { respond, tool_error, ENVELOPE_OUTPUT_SHAPE } from "./envelope.ts";
 import { slice_check_results, slice_contract } from "./slices.ts";
-import { CheckFileSchema, ContractSchema } from "./suspec/contract.ts";
 
 export type Ctx = Readonly<{ env: SuspecEnv }>;
 
@@ -109,8 +109,7 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
       const format = resolve_format(responseFormat);
       return respond(await invoke_suspec(ctx.env, "check", paths, {
         flags,
-        schema: CheckFileSchema,
-        output: "jsonl",
+        expected: "reports",
       }), {
         format,
         slice: slice_check_results,
@@ -133,11 +132,7 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
     async ({ responseFormat }) => {
       const format = resolve_format(responseFormat);
       return respond(
-        await invoke_suspec(ctx.env, "check", [], {
-          bare: ["--contract"],
-          schema: ContractSchema,
-          output: "json",
-        }),
+        await invoke_supported_contract(ctx.env),
         { format, slice: slice_contract },
       );
     },

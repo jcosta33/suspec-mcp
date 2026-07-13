@@ -6,6 +6,8 @@ import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 // @ts-expect-error — plain-JS helper shared with scripts/generate-fixtures.mjs (no .d.ts on purpose)
 import { resolveSuspecBin } from "../scripts/resolve-suspec-bin.mjs";
+// @ts-expect-error — the fixture generator exports its pure assertion seam without a .d.ts
+import { assertCaptureExpectation } from "../scripts/generate-fixtures.mjs";
 
 // The fixtures stay GENERATED, not hand-edited. This test re-runs scripts/generate-fixtures.mjs
 // against the REAL `suspec` binary into a temp dir, then asserts the checked-in fixtures still match
@@ -46,6 +48,95 @@ const FIXTURES = [
   "error-quoted-bom-missing-spec",
   "provenance",
 ];
+
+const report = (level: "clean" | "warning" | "blocking", path: string) => ({
+  level,
+  path,
+  diagnostics: [],
+});
+
+describe("fixture capture exit assertions", () => {
+  it.each([
+    ["json", "clean", 0, JSON.stringify(report("clean", "clean.md"))],
+    ["json", "warning", 1, JSON.stringify(report("warning", "warning.md"))],
+    ["json", "blocking", 2, JSON.stringify(report("blocking", "blocking.md"))],
+    [
+      "json",
+      "structured-error",
+      2,
+      JSON.stringify({ error: "Usage", message: "bad input" }),
+    ],
+    [
+      "json",
+      "contract",
+      0,
+      JSON.stringify({ version: "0.18.0", checks: [] }),
+    ],
+    ["jsonl", "clean", 0, JSON.stringify(report("clean", "clean.md"))],
+    [
+      "jsonl",
+      "warning",
+      1,
+      [report("clean", "clean.md"), report("warning", "warning.md")]
+        .map((document) => JSON.stringify(document))
+        .join("\n"),
+    ],
+    [
+      "jsonl",
+      "blocking",
+      2,
+      [report("warning", "warning.md"), report("blocking", "blocking.md")]
+        .map((document) => JSON.stringify(document))
+        .join("\n"),
+    ],
+    [
+      "jsonl",
+      "structured-error",
+      2,
+      JSON.stringify({ error: "Usage", message: "bad input" }),
+    ],
+  ] as const)(
+    "accepts %s %s captures only at exit %i",
+    (format, exitClass, expectedStatus, stdout) => {
+      expect(() =>
+        assertCaptureExpectation(
+          stdout,
+          expectedStatus,
+          { format, exitClass, expectedStatus },
+          "fixture",
+        ),
+      ).not.toThrow();
+    },
+  );
+
+  it("aborts when a fixture capture exits with the wrong status", () => {
+    expect(() =>
+      assertCaptureExpectation(
+        JSON.stringify(report("clean", "clean.md")),
+        1,
+        { format: "json", exitClass: "clean", expectedStatus: 0 },
+        "check-spec",
+      ),
+    ).toThrow(/check-spec expected clean\/exit 0, received exit 1/);
+  });
+
+  it("aborts on a mixed or wrongly classified fixture capture", () => {
+    const mixed = [
+      report("blocking", "blocking.md"),
+      { error: "Usage", message: "mixed" },
+    ]
+      .map((document) => JSON.stringify(document))
+      .join("\n");
+    expect(() =>
+      assertCaptureExpectation(
+        mixed,
+        2,
+        { format: "jsonl", exitClass: "blocking", expectedStatus: 2 },
+        "check-mixed",
+      ),
+    ).toThrow(/mixed\/unknown/);
+  });
+});
 
 describe("the contract fixtures stay generated from the real binary", () => {
   it("regenerating into a temp dir reproduces the checked-in fixtures", () => {

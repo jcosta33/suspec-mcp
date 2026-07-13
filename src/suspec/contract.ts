@@ -1,11 +1,9 @@
 // Runtime schemas for every JSON document accepted from the CLI. Unknown additive fields pass through;
 // missing or malformed consumed fields fail the invocation instead of leaking partial data to clients.
 //
-// ENUM POLICY (AC-011, audit F7): a field is modelled as a CLOSED `z.enum` ONLY when the adapter
-// BRANCHES on its exact value-set. The adapter branches on NO payload enum on this surface — a
-// diagnostic's `severity` and a report's `level` are relayed, never switched on — so every such field
-// is `z.string()`: a benign additive CLI value must NOT convert into a suspec-mcp break for no
-// consumer benefit.
+// ENUM POLICY: a field is modelled as a CLOSED `z.enum` only when the adapter branches on its exact
+// value-set. Report `level` drives exit-code validation, so it is closed; diagnostic `severity`
+// remains pass-through because the adapter only relays it.
 
 import { z } from "zod";
 
@@ -50,7 +48,7 @@ const CheckDiagnostic = z
   .passthrough();
 export const CheckReportSchema = z
   .object({
-    level: z.string(),
+    level: z.enum(["clean", "warning", "blocking"]),
     path: z.string(),
     diagnostics: z.array(CheckDiagnostic),
   })

@@ -13,8 +13,6 @@ import { fileURLToPath } from "node:url";
 import { invoke_suspec, type SuspecEnv } from "../src/suspec/invoke.ts";
 import { require_supported_contract } from "../src/suspec/compatibility.ts";
 import {
-  CheckFileSchema,
-  ContractSchema,
   SUPPORTED_CHECKS,
   SUPPORTED_CONTRACT_VERSION,
 } from "../src/suspec/contract.ts";
@@ -34,24 +32,30 @@ const checkOptions = (
   flags?: Readonly<Record<string, string>>,
 ): Parameters<typeof invoke_suspec>[3] => ({
   ...(flags === undefined ? {} : { flags }),
-  schema: CheckFileSchema,
-  output: "jsonl",
+  expected: "reports",
 });
 const contractOptions: Parameters<typeof invoke_suspec>[3] = {
   bare: ["--contract"],
-  schema: ContractSchema,
-  output: "json",
+  expected: "contract",
 };
 
-function fixedOutputBin(data: unknown, exitCode: number): {
+function fixedOutputBin(
+  data: unknown,
+  exitCode: number,
+  output: "json" | "jsonl" = "json",
+): {
   bin: string;
   cleanup: () => void;
 } {
   const dir = mkdtempSync(join(tmpdir(), "suspec-mcp-fixed-output-"));
   const bin = join(dir, "suspec.mjs");
+  const stdout =
+    output === "jsonl"
+      ? (data as unknown[]).map((document) => JSON.stringify(document)).join("\n")
+      : JSON.stringify(data);
   writeFileSync(
     bin,
-    `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(JSON.stringify(data))});\nprocess.exit(${String(exitCode)});\n`,
+    `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(stdout)});\nprocess.exit(${String(exitCode)});\n`,
   );
   chmodSync(bin, 0o755);
   return {
@@ -179,8 +183,7 @@ describe("invoke_suspec — the subprocess edge", () => {
       expect(() =>
         invoke_suspec(env(stub), "check", [], {
           bare: [flag],
-          schema: ContractSchema,
-          output: "json",
+          expected: "contract",
         }),
       ).toThrow(/non-allow-listed flag/);
     }
@@ -301,6 +304,110 @@ describe("invoke_suspec — the subprocess edge", () => {
       }
     },
   );
+
+  it.each([
+    ["clean", 1],
+    ["clean", 2],
+    ["warning", 0],
+    ["warning", 2],
+    ["blocking", 0],
+    ["blocking", 1],
+  ] as const)(
+    "rejects a %s-only report stream at exit %i",
+    async (level, exitCode) => {
+      const child = fixedOutputBin(
+        [{ level, path: "spec.md", diagnostics: [] }],
+        exitCode,
+        "jsonl",
+      );
+      try {
+        const result = await invoke_suspec(
+          env(child.bin),
+          "check",
+          ["spec.md"],
+          checkOptions(),
+        );
+        expect(result.kind).toBe("launch-error");
+        if (result.kind === "launch-error") {
+          expect(result.message).toContain(`${level} report stream`);
+          expect(result.message).toContain(`exit ${exitCode}`);
+          expect(result.message).toMatch(/reports require exit [012]/);
+        }
+      } finally {
+        child.cleanup();
+      }
+    },
+  );
+
+  it("uses the maximum report level to validate a report-only JSONL stream", async () => {
+    const child = fixedOutputBin(
+      [
+        { level: "clean", path: "clean.md", diagnostics: [] },
+        { level: "warning", path: "warning.md", diagnostics: [] },
+      ],
+      1,
+      "jsonl",
+    );
+    try {
+      const result = await invoke_suspec(
+        env(child.bin),
+        "check",
+        ["clean.md", "warning.md"],
+        checkOptions(),
+      );
+      expect(result.kind).toBe("ok");
+      expect(result.invocation.exitCode).toBe(1);
+    } finally {
+      child.cleanup();
+    }
+  });
+
+  it("rejects a mixed report/structured-error JSONL stream", async () => {
+    const child = fixedOutputBin(
+      [
+        { level: "blocking", path: "spec.md", diagnostics: [] },
+        { error: "Usage", message: "mixed stream" },
+      ],
+      2,
+      "jsonl",
+    );
+    try {
+      const result = await invoke_suspec(
+        env(child.bin),
+        "check",
+        ["spec.md"],
+        checkOptions(),
+      );
+      expect(result.kind).toBe("launch-error");
+      if (result.kind === "launch-error") {
+        expect(result.message).toMatch(/mixed report.*structured error/i);
+      }
+    } finally {
+      child.cleanup();
+    }
+  });
+
+  it("rejects a report with an unknown level", async () => {
+    const child = fixedOutputBin(
+      [{ level: "unknown", path: "spec.md", diagnostics: [] }],
+      0,
+      "jsonl",
+    );
+    try {
+      const result = await invoke_suspec(
+        env(child.bin),
+        "check",
+        ["spec.md"],
+        checkOptions(),
+      );
+      expect(result.kind).toBe("launch-error");
+      if (result.kind === "launch-error") {
+        expect(result.message).toMatch(/violates the supported contract/i);
+      }
+    } finally {
+      child.cleanup();
+    }
+  });
 
   it.each([3, 126, 127])(
     'returns kind:"launch-error" for unsupported exit %i even with valid-looking JSON',

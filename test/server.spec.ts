@@ -21,6 +21,10 @@ import { create_server } from "../src/server.ts";
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 const stubBin = join(fixtures, "stub-suspec.mjs");
 const invalidPayloadBin = join(fixtures, "invalid-payload-suspec.mjs");
+const contractExitAfterProbeBin = join(
+  fixtures,
+  "contract-exit-after-probe-suspec.mjs",
+);
 
 let root: string;
 let logPath: string;
@@ -350,6 +354,20 @@ describe("suspec-mcp server", () => {
       expect(result.structuredContent.data.version).toBe("0.18.0");
       expect(result.structuredContent.responseFormat).toBe("detailed");
       expect(invocations()).toEqual([["check", "--contract", "--json"]]);
+    } finally {
+      await close();
+    }
+  });
+
+  it("rejects a valid contract payload when suspec_get_checks receives exit 1", async () => {
+    const { client, close } = await connectClient(contractExitAfterProbeBin);
+    try {
+      const result = (await client.callTool({
+        name: "suspec_get_checks",
+        arguments: {},
+      })) as { isError?: boolean; content: { text: string }[] };
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toMatch(/contracts require exit 0/i);
     } finally {
       await close();
     }

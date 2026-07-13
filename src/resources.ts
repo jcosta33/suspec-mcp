@@ -4,9 +4,10 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { invoke_suspec } from "./suspec/invoke.ts";
-import { ContractSchema } from "./suspec/contract.ts";
-import { require_supported_contract_result } from "./suspec/compatibility.ts";
+import {
+  invoke_supported_contract,
+  require_supported_contract_result,
+} from "./suspec/compatibility.ts";
 import type { Ctx } from "./tools.ts";
 
 const JSON_MIME = "application/json";
@@ -22,11 +23,7 @@ export function register_resources(server: McpServer, ctx: Ctx): void {
       mimeType: JSON_MIME,
     },
     async (uri) => {
-      const result = await invoke_suspec(ctx.env, "check", [], {
-        bare: ["--contract"],
-        schema: ContractSchema,
-        output: "json",
-      });
+      const result = await invoke_supported_contract(ctx.env);
       const data = require_supported_contract_result(result);
       return {
         contents: [

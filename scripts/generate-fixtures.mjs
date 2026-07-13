@@ -23,7 +23,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { inspectSuspecBin, resolveSuspecBin } from "./resolve-suspec-bin.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -36,27 +36,84 @@ function arg(name, fallback) {
     : fallback;
 }
 
-const outDir = resolve(arg("--out", join(repoRoot, "test", "fixtures")));
-const suspecBinArg = arg("--suspec-bin", null);
-const suspecBin = suspecBinArg
-  ? resolve(suspecBinArg)
-  : resolveSuspecBin(repoRoot);
-if (!suspecBin) {
-  console.error(
-    "generate-fixtures: cannot find the suspec binary. Pass --suspec-bin <path>, set SUSPEC_BIN, " +
-      "or check out suspec-cli as a sibling (any folder name; package name must be suspec-cli).",
-  );
-  process.exit(2);
-}
-const provenance = inspectSuspecBin(suspecBin);
-process.stderr.write(
-  `suspec-cli provenance: root=${resolve(suspecBin, "../..")}, head=${provenance.gitHead}, dirty=${provenance.worktreeDirty}, worktree=${provenance.worktreeSha256}, binary=${provenance.binarySha256}\n`,
-);
+let outDir;
+let suspecBin;
+let provenance;
 
-// Run `suspec <args> --json` in `cwd`; return the parsed JSON (or throw a clear error). Structured
-// errors (an `{error, message}` body with exit 2) are as much a captured shape as a success report,
-// so the parsed object is returned either way — the caller names what it expects.
-function suspecOutput(cwd, args) {
+const EXIT_BY_CLASS = {
+  contract: 0,
+  clean: 0,
+  warning: 1,
+  blocking: 2,
+  "structured-error": 2,
+};
+const REPORT_LEVELS = ["clean", "warning", "blocking"];
+
+function documentClass(document) {
+  if (document === null || typeof document !== "object" || Array.isArray(document)) {
+    return "unknown";
+  }
+  if (typeof document.error === "string" && typeof document.message === "string") {
+    return "structured-error";
+  }
+  if (typeof document.version === "string" && Array.isArray(document.checks)) {
+    return "contract";
+  }
+  return REPORT_LEVELS.includes(document.level) ? document.level : "unknown";
+}
+
+export function assertCaptureExpectation(
+  stdout,
+  status,
+  { format, exitClass, expectedStatus },
+  label = "capture",
+) {
+  if (format !== "json" && format !== "jsonl") {
+    throw new Error(`${label} must declare format json or jsonl`);
+  }
+  if (!Object.hasOwn(EXIT_BY_CLASS, exitClass)) {
+    throw new Error(`${label} must declare a known exit class`);
+  }
+  if (expectedStatus !== EXIT_BY_CLASS[exitClass]) {
+    throw new Error(
+      `${label} declares inconsistent ${exitClass}/exit ${String(expectedStatus)}`,
+    );
+  }
+  if (status !== expectedStatus) {
+    throw new Error(
+      `${label} expected ${exitClass}/exit ${expectedStatus}, received exit ${String(status)}`,
+    );
+  }
+
+  const documents =
+    format === "jsonl"
+      ? stdout
+          .split(/\r?\n/)
+          .filter((line) => line.trim().length > 0)
+          .map((line) => JSON.parse(line))
+      : [JSON.parse(stdout)];
+  const classes = documents.map(documentClass);
+  let actualClass;
+  if (classes.length > 0 && classes.every((value) => REPORT_LEVELS.includes(value))) {
+    actualClass = REPORT_LEVELS[Math.max(...classes.map((value) => REPORT_LEVELS.indexOf(value)))];
+  } else if (classes.length > 0 && classes.every((value) => value === "structured-error")) {
+    actualClass = "structured-error";
+  } else if (classes.length === 1 && classes[0] === "contract") {
+    actualClass = "contract";
+  } else {
+    actualClass = `mixed/unknown (${classes.join(", ") || "empty"})`;
+  }
+  if (actualClass !== exitClass) {
+    throw new Error(
+      `${label} expected ${exitClass}/exit ${expectedStatus}, received ${actualClass}/exit ${String(status)}`,
+    );
+  }
+  return format === "jsonl" ? documents : documents[0];
+}
+
+// Run `suspec <args> --json` in `cwd`; every caller must name the expected wire format, payload
+// class, and process status before the subprocess runs.
+function suspecOutput(cwd, args, expectation) {
   const res = spawnSync(process.execPath, [suspecBin, ...args, "--json"], {
     cwd,
     encoding: "utf8",
@@ -68,18 +125,28 @@ function suspecOutput(cwd, args) {
       `suspec ${args.join(" ")} produced no JSON (exit ${res.status}): ${(res.stderr ?? "").trim()}`,
     );
   }
-  return stdout;
+  return assertCaptureExpectation(
+    stdout,
+    res.status,
+    expectation,
+    `suspec ${args.join(" ")}`,
+  );
 }
 
-function suspec(cwd, args) {
-  return JSON.parse(suspecOutput(cwd, args));
+function suspec(cwd, args, exitClass, expectedStatus) {
+  return suspecOutput(cwd, args, {
+    format: "json",
+    exitClass,
+    expectedStatus,
+  });
 }
 
-function suspecJsonl(cwd, args) {
-  return suspecOutput(cwd, args)
-    .split(/\r?\n/)
-    .filter((line) => line.trim().length > 0)
-    .map((line) => JSON.parse(line));
+function suspecJsonl(cwd, args, exitClass, expectedStatus) {
+  return suspecOutput(cwd, args, {
+    format: "jsonl",
+    exitClass,
+    expectedStatus,
+  });
 }
 
 function write(name, value) {
@@ -346,6 +413,22 @@ const REVIEW_BAD = [
 ].join("\n");
 
 function main() {
+  outDir = resolve(arg("--out", join(repoRoot, "test", "fixtures")));
+  const suspecBinArg = arg("--suspec-bin", null);
+  suspecBin = suspecBinArg
+    ? resolve(suspecBinArg)
+    : resolveSuspecBin(repoRoot);
+  if (!suspecBin) {
+    console.error(
+      "generate-fixtures: cannot find the suspec binary. Pass --suspec-bin <path>, set SUSPEC_BIN, " +
+        "or check out suspec-cli as a sibling (any folder name; package name must be suspec-cli).",
+    );
+    process.exit(2);
+  }
+  provenance = inspectSuspecBin(suspecBin);
+  process.stderr.write(
+    `suspec-cli provenance: root=${resolve(suspecBin, "../..")}, head=${provenance.gitHead}, dirty=${provenance.worktreeDirty}, worktree=${provenance.worktreeSha256}, binary=${provenance.binarySha256}\n`,
+  );
   mkdirSync(outDir, { recursive: true });
   write("provenance", provenance);
   const scratch = mkdtempSync(join(tmpdir(), "suspec-mcp-fixtures-"));
@@ -372,8 +455,11 @@ function main() {
 
     // 1. the per-file check reports: a clean spec, a clean review (both companions), and a
     //    diagnostic-carrying review.
-    write("check-spec", suspec(scratch, ["check", "spec-demo.md"]));
-    write("check-task", suspec(scratch, ["check", "task-demo.md"]));
+    write("check-spec", suspec(scratch, ["check", "spec-demo.md"], "clean", 0));
+    write(
+      "check-task",
+      suspec(scratch, ["check", "task-demo.md"], "blocking", 2),
+    );
     write(
       "check-review",
       suspec(scratch, [
@@ -383,7 +469,7 @@ function main() {
         "spec-demo.md",
         "--task",
         "task-demo.md",
-      ]),
+      ], "clean", 0),
     );
     write(
       "check-review-diagnostics",
@@ -394,7 +480,7 @@ function main() {
         "spec-demo.md",
         "--task",
         "task-demo.md",
-      ]),
+      ], "blocking", 2),
     );
     write(
       "check-review-task-mismatch",
@@ -405,35 +491,58 @@ function main() {
         "spec-demo.md",
         "--task",
         "task-demo.md",
-      ]),
+      ], "blocking", 2),
     );
     write(
       "check-multiple",
-      suspecJsonl(scratch, ["check", "spec-demo.md", "spec-second.md"]),
+      suspecJsonl(
+        scratch,
+        ["check", "spec-demo.md", "spec-second.md"],
+        "clean",
+        0,
+      ),
     );
     write(
       "check-duplicate-id",
-      suspecJsonl(scratch, ["check", "spec-demo.md", "spec-duplicate.md"]),
+      suspecJsonl(
+        scratch,
+        ["check", "spec-demo.md", "spec-duplicate.md"],
+        "blocking",
+        2,
+      ),
     );
 
     // 2. an artifact whose type has no check face — the unchecked notice.
-    write("check-unchecked", suspec(scratch, ["check", "audit-demo.md"]));
+    write(
+      "check-unchecked",
+      suspec(scratch, ["check", "audit-demo.md"], "clean", 0),
+    );
 
     // 3. the checks contract.
-    write("contract", suspec(scratch, ["check", "--contract"]));
+    write("contract", suspec(scratch, ["check", "--contract"], "contract", 0));
 
     // 4. the structured error the conditional-companion rule emits: the review names a task, but no
     //    --task is handed — the CLI refuses (exit 2) instead of silently checking less.
     write(
       "error-missing-task",
-      suspec(scratch, ["check", "review-demo.md", "--spec", "spec-demo.md"]),
+      suspec(
+        scratch,
+        ["check", "review-demo.md", "--spec", "spec-demo.md"],
+        "structured-error",
+        2,
+      ),
     );
 
     // 5. the structured error when a companion flag accompanies a NON-review artifact — the
     //    companion flags belong to a review and nothing else.
     write(
       "error-companions-without-review",
-      suspec(scratch, ["check", "spec-demo.md", "--spec", "spec-demo.md"]),
+      suspec(
+        scratch,
+        ["check", "spec-demo.md", "--spec", "spec-demo.md"],
+        "structured-error",
+        2,
+      ),
     );
 
     // 6. the structured error when a handed companion path does not exist on disk — the path is
@@ -447,12 +556,20 @@ function main() {
         "no-such-spec.md",
         "--task",
         "task-demo.md",
-      ]),
+      ], "structured-error", 2),
     );
 
     // 7. the structured error when a review is checked with NO --spec at all — the spec is the
     //    review's always-required companion.
-    write("error-missing-spec", suspec(scratch, ["check", "review-demo.md"]));
+    write(
+      "error-missing-spec",
+      suspec(
+        scratch,
+        ["check", "review-demo.md"],
+        "structured-error",
+        2,
+      ),
+    );
 
     // 8. the structured error when a --task is handed to a review whose frontmatter names no task —
     //    a companion nothing references is a wiring mistake.
@@ -465,7 +582,7 @@ function main() {
         "spec-demo.md",
         "--task",
         "task-demo.md",
-      ]),
+      ], "structured-error", 2),
     );
 
     // 9. malformed task companions must never erase or mis-key review coverage.
@@ -478,7 +595,7 @@ function main() {
         "spec-demo.md",
         "--task",
         "not-a-task.md",
-      ]),
+      ], "structured-error", 2),
     );
     write(
       "error-task-empty-scope",
@@ -489,7 +606,7 @@ function main() {
         "spec-demo.md",
         "--task",
         "task-empty-scope.md",
-      ]),
+      ], "structured-error", 2),
     );
     write(
       "error-task-wrong-source",
@@ -500,7 +617,7 @@ function main() {
         "spec-demo.md",
         "--task",
         "task-wrong-source.md",
-      ]),
+      ], "structured-error", 2),
     );
     write(
       "error-spec-wrong-type",
@@ -511,7 +628,7 @@ function main() {
         "not-a-spec.md",
         "--task",
         "task-demo.md",
-      ]),
+      ], "structured-error", 2),
     );
     write(
       "error-review-task-list",
@@ -522,11 +639,16 @@ function main() {
         "spec-demo.md",
         "--task",
         "task-demo.md",
-      ]),
+      ], "structured-error", 2),
     );
     write(
       "error-quoted-bom-missing-spec",
-      suspec(scratch, ["check", "review-quoted-bom.md"]),
+      suspec(
+        scratch,
+        ["check", "review-quoted-bom.md"],
+        "structured-error",
+        2,
+      ),
     );
 
     process.stderr.write(`done. fixtures in ${outDir}\n`);
@@ -535,4 +657,9 @@ function main() {
   }
 }
 
-main();
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
+) {
+  main();
+}

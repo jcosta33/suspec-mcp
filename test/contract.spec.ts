@@ -341,9 +341,7 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     expect(CheckLineSchema.safeParse({ malformed: true }).success).toBe(false);
   });
 
-  it("a diagnostic's `severity` and a report's `level` are PASS-THROUGH: a new CLI value does NOT trip the wire", () => {
-    // The adapter branches on NO payload enum — it relays these fields — so a benign additive CLI
-    // value class must parse (the enum policy in contract.ts).
+  it("rejects an unknown report level while keeping diagnostic severity pass-through", () => {
     const report = JSON.parse(
       readFileSync(
         join(here, "fixtures", "check-review-diagnostics.json"),
@@ -352,6 +350,9 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     );
     report.level = "a-new-level-class";
     report.diagnostics[0].severity = "a-new-severity-class";
+    expect(CheckReportSchema.safeParse(report).success).toBe(false);
+
+    report.level = "blocking";
     expect(CheckReportSchema.safeParse(report).success).toBe(true);
   });
 });

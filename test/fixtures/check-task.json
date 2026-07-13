@@ -5,7 +5,7 @@
     {
       "code": "C023",
       "severity": "hard-error",
-      "message": "task `## Verify` must contain a numeric `Exit status:` plus non-empty fenced raw output, an explicit `CI:`/`CI link:` field, or `n/a` with a reason",
+      "message": "task `## Verify` must contain a numeric `Exit status:` plus non-claim-only fenced raw output, an explicit `CI:`/`CI link:` field, or `n/a` with a reason",
       "line": null
     }
   ]

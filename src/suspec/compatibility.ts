@@ -1,4 +1,4 @@
-import { ContractSchema, SUPPORTED_CONTRACT_VERSION } from "./contract.ts";
+import { SUPPORTED_CONTRACT_VERSION } from "./contract.ts";
 import {
   invoke_suspec,
   type SuspecEnv,
@@ -20,11 +20,14 @@ export function require_supported_contract_result(result: SuspecResult): unknown
   );
 }
 
-export async function require_supported_contract(env: SuspecEnv): Promise<void> {
-  const result = await invoke_suspec(env, "check", [], {
+export function invoke_supported_contract(env: SuspecEnv): Promise<SuspecResult> {
+  return invoke_suspec(env, "check", [], {
     bare: ["--contract"],
-    schema: ContractSchema,
-    output: "json",
+    expected: "contract",
   });
+}
+
+export async function require_supported_contract(env: SuspecEnv): Promise<void> {
+  const result = await invoke_supported_contract(env);
   require_supported_contract_result(result);
 }

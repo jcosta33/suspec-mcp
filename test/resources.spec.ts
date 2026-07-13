@@ -15,6 +15,10 @@ const stubBin = join(fixtures, "stub-suspec.mjs");
 const errorBin = join(fixtures, "error-after-contract-suspec.mjs");
 const nonjsonBin = join(fixtures, "nonjson-after-contract-suspec.mjs");
 const oldContractBin = join(fixtures, "old-contract-suspec.mjs");
+const contractExitAfterProbeBin = join(
+  fixtures,
+  "contract-exit-after-probe-suspec.mjs",
+);
 const malformedContracts = [
   ["empty-contract-suspec.mjs", /missing check ID C001/],
   ["partial-contract-suspec.mjs", /missing check ID C024/],
@@ -126,6 +130,17 @@ describe("suspec-mcp resources", () => {
       await expect(
         client.readResource({ uri: "suspec://checks" }),
       ).rejects.toThrow(/no parseable JSON/);
+    } finally {
+      await close();
+    }
+  });
+
+  it("rejects a valid contract payload when the checks resource receives exit 1", async () => {
+    const { client, close } = await connect(contractExitAfterProbeBin);
+    try {
+      await expect(
+        client.readResource({ uri: "suspec://checks" }),
+      ).rejects.toThrow(/contracts require exit 0/i);
     } finally {
       await close();
     }
