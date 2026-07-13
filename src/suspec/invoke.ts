@@ -250,7 +250,25 @@ export function invoke_suspec(
       }
 
       const exitByLevel = { clean: 0, warning: 1, blocking: 2 } as const;
-      const reports = validated as { level: keyof typeof exitByLevel }[];
+      const reports = validated as {
+        level: keyof typeof exitByLevel;
+        path: string;
+      }[];
+      const primaryPathsMatch = positional.every(
+        (path, index) => reports[index]?.path === path,
+      );
+      const hasNoSetReport = reports.length === positional.length;
+      const hasOneFinalSetReport =
+        positional.length > 1 &&
+        reports.length === positional.length + 1 &&
+        reports.at(-1)?.path === "(file set)";
+      if (!primaryPathsMatch || (!hasNoSetReport && !hasOneFinalSetReport)) {
+        return {
+          kind: "launch-error",
+          invocation,
+          message: `\`${command}\` did not return one report for each ordered primary path followed by at most one file-set report`,
+        };
+      }
       const expectedExit = Math.max(
         ...reports.map((report) => exitByLevel[report.level]),
       );

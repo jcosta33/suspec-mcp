@@ -377,6 +377,60 @@ describe("invoke_suspec — the subprocess edge", () => {
     }
   });
 
+  it.each([
+    [
+      "reordered",
+      [reportForLevel("clean", "second.md"), reportForLevel("clean", "first.md")],
+    ],
+    ["missing", [reportForLevel("clean", "first.md")]],
+    [
+      "substituted",
+      [reportForLevel("clean", "first.md"), reportForLevel("clean", "other.md")],
+    ],
+  ] as const)("rejects a %s primary report stream", async (_name, reports) => {
+    const child = fixedOutputBin(reports, 0, "jsonl");
+    try {
+      const result = await invoke_suspec(
+        env(child.bin),
+        "check",
+        ["first.md", "second.md"],
+        checkOptions(),
+      );
+      expect(result.kind).toBe("launch-error");
+      if (result.kind === "launch-error") {
+        expect(result.message).toMatch(/ordered primary path/i);
+      }
+    } finally {
+      child.cleanup();
+    }
+  });
+
+  it("rejects a file-set report anywhere except one final position", async () => {
+    const child = fixedOutputBin(
+      [
+        reportForLevel("clean", "(file set)"),
+        reportForLevel("clean", "first.md"),
+        reportForLevel("clean", "second.md"),
+      ],
+      0,
+      "jsonl",
+    );
+    try {
+      const result = await invoke_suspec(
+        env(child.bin),
+        "check",
+        ["first.md", "second.md"],
+        checkOptions(),
+      );
+      expect(result.kind).toBe("launch-error");
+      if (result.kind === "launch-error") {
+        expect(result.message).toMatch(/ordered primary path/i);
+      }
+    } finally {
+      child.cleanup();
+    }
+  });
+
   it("rejects a mixed report/structured-error JSONL stream", async () => {
     const child = fixedOutputBin(
       [

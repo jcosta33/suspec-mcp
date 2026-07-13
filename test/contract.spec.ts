@@ -154,6 +154,31 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     }
   });
 
+  it("accepts only the four recognized unchecked artifact types", () => {
+    for (const type of ["inventory", "audit", "research", "inspection"]) {
+      expect(
+        UncheckedArtifactSchema.safeParse({
+          level: "clean",
+          path: `${type}.md`,
+          type,
+          checked: false,
+        }).success,
+        type,
+      ).toBe(true);
+    }
+    for (const type of ["spec", "task", "review", "change-plan", "finding"]) {
+      expect(
+        UncheckedArtifactSchema.safeParse({
+          level: "clean",
+          path: `${type}.md`,
+          type,
+          checked: false,
+        }).success,
+        type,
+      ).toBe(false);
+    }
+  });
+
   it("every check capture parses under the CheckFile union", () => {
     for (const name of [
       "check-spec.json",

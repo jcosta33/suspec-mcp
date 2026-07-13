@@ -43,3 +43,15 @@ jobs:
           corepack enable
           pnpm install --frozen-lockfile --ignore-scripts
           pnpm gate
+
+  method-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - { name: suspec-mcp, uses: actions/checkout@v4, with: { path: family/suspec-mcp } }
+      - { name: suspec, uses: actions/checkout@v4, with: { repository: jcosta33/suspec, path: family/suspec } }
+      - { name: suspec-skills, uses: actions/checkout@v4, with: { repository: jcosta33/suspec-skills, path: family/suspec-skills } }
+      - { name: suspec-agents, uses: actions/checkout@v4, with: { repository: jcosta33/suspec-agents, path: family/suspec-agents } }
+      - { name: suspec-cli, uses: actions/checkout@v4, with: { repository: jcosta33/suspec-cli, path: family/suspec-cli } }
+
+      - name: Method gates
+        run: sh family/suspec/scripts/lint-all.sh "$GITHUB_WORKSPACE/family"
