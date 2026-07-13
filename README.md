@@ -3,10 +3,9 @@
 An MCP stdio server that gives shell-less agent clients access to Suspec's deterministic artifact
 checking.
 
-It is a thin, hardened adapter over the [`suspec` CLI](https://github.com/jcosta33/suspec-cli):
-every tool call shells out to `suspec check --json` and relays the CLI's recorded diagnostics,
-severity levels, and exit codes under a **no-verdict envelope**. The server never adds a assessment or acceptance,
-approval, or merge decision of its own; the human decides what those facts mean for the work.
+It is a thin adapter over the [`suspec` CLI](https://github.com/jcosta33/suspec-cli). It requires
+checks contract `0.18.0`, validates every CLI JSON document at runtime, and returns the CLI's ordered
+reports and exit code.
 
 ## Why it exists
 
@@ -16,32 +15,31 @@ server exposes the same command contract to a client without shell access.
 
 ## The tools
 
-### `suspec_check_file`
+### `suspec_check`
 
-Run the checks contract over ONE artifact file. The artifact's kind is read from its own
-frontmatter `type:` — nothing is inferred from filenames or directory layout:
+Run one CLI process over an ordered, non-empty array of absolute artifact paths. The artifact kind
+comes from frontmatter `type:`; filenames and directories carry no meaning. One invocation enables
+cross-file checks such as C002.
 
 - a **spec** runs the spec checks,
+- a **task** runs the shape, evidence, and closure checks,
 - a **change-plan** runs the plan checks,
-- a **review packet** reconciles against the companion files you pass explicitly:
-  - `spec` — always required for a review,
-  - `task` — required exactly when the review's frontmatter names a `task:`.
+- a **review packet** reconciles against explicit `specPath` and optional `taskPath` companions.
 
 The CLI refuses a missing or unreferenced companion with a blocking error rather than
 silently checking less; that refusal surfaces as `ok: false` with the CLI's own message.
-An artifact type with no check face comes back as `checked: false`; nothing to validate is not a
-defect.
+Recognized unchecked types (`inventory`, `audit`, `research`, and `inspection`) come back as
+`checked: false`; missing and unknown types are rejected by the CLI.
 
-This tool accepts one primary artifact, so the CLI's cross-file duplicate-ID check (C002) cannot run
-through this surface. Use `suspec check <path> [<path>...]` directly when C002 across a file set is
-required. Expanding the MCP input surface is a separate product decision.
+Companions are valid only when `paths` contains exactly one review target. A CLI refusal remains
+structured data with `ok: false`.
 
-| input             | meaning                                                      |
-| ----------------- | ------------------------------------------------------------ |
-| `path`            | full path to the artifact to check                           |
-| `spec`            | full path to the source spec, when checking a review         |
-| `task`            | full path to the task packet, when the review names a task   |
-| `response_format` | `concise` (default) or `detailed` (the verbatim CLI payload) |
+| input            | meaning                                                         |
+| ---------------- | --------------------------------------------------------------- |
+| `paths`          | ordered, non-empty array of absolute primary artifact paths    |
+| `specPath`       | absolute source-spec path for one review target                 |
+| `taskPath`       | absolute task-packet path for one review target                 |
+| `responseFormat` | `concise` (default) or `detailed` (validated CLI payloads)      |
 
 ### `suspec_get_checks`
 
@@ -59,8 +57,10 @@ Every tool result carries the same structure:
 - `source` — provenance: the exact CLI command run and its exit code
   (0 clean · 1 warnings · 2 blocking / structured error).
 - `data` — the CLI's `--json` output, verbatim in `detailed` mode or a targeted slice in
-  `concise` mode (the default).
-- `noVerdictIssued: true` — always, on every result.
+  `concise` mode (the default). `suspec_check` always returns an ordered array; an optional final
+  `(file set)` report carries cross-file findings.
+- `note` — optional adapter context when needed.
+- `responseFormat` — `concise` or `detailed`.
 
 ## Run it
 
@@ -98,14 +98,15 @@ CLI-binary configuration precedence is flag > environment > `suspec` on PATH:
 | `--suspec-bin <path>` | `SUSPEC_BIN` | `suspec` on PATH | the CLI binary to invoke |
 
 Each tool call supplies full artifact paths. The server does not discover or bind a repository root,
-workspace, configuration file, or artifact store. Callers may pass ordinary Suspec artifacts from
-`~/.agents/artifacts/<workspace>/`; the server treats that root like any other explicit path.
+workspace, configuration file, or artifact store. Callers may pass the resolved absolute path of
+ordinary Suspec artifacts under `~/.agents/artifacts/<workspace>/`; the server treats that root like
+any other explicit path.
 
 ## Security posture
 
 The server keeps the subprocess boundary narrow:
 
-- **Full paths, passed through** — the checked artifact and companions must be absolute paths with no
+- **Full paths, passed through** — primary artifacts and companions must be absolute paths with no
   control, format, or line-separator characters. They are passed to the CLI unchanged; the server
   resolves no root or tree.
 - **Fixed argv** — the CLI is invoked with a fixed argument array, never a shell string.
@@ -133,7 +134,8 @@ pnpm gate         # typecheck + lint + coverage (enforced thresholds) + build
 pnpm fixtures     # regenerate the contract fixtures from a real suspec binary
 ```
 
-The JSON contract between this server and the CLI is pinned by generated fixtures:
+The JSON contract between this server and the CLI is enforced at startup and on every invocation,
+then pinned by generated fixtures:
 `scripts/generate-fixtures.mjs` captures the real binary's output, and the test suite parses
 every fixture through the schemas in `src/suspec/contract.ts` — a renamed or dropped field
 fails a test instead of the adapter silently producing wrong output. Fixtures are generated,

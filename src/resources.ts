@@ -5,6 +5,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { invoke_suspec, type SuspecResult } from "./suspec/invoke.ts";
+import { ContractSchema } from "./suspec/contract.ts";
 import type { Ctx } from "./tools.ts";
 
 const JSON_MIME = "application/json";
@@ -15,7 +16,7 @@ function body_of(result: SuspecResult): string {
     return JSON.stringify(result.data, null, 2);
   }
   if (result.kind === "structured-error") {
-    return JSON.stringify(result.error, null, 2);
+    return JSON.stringify(result.data, null, 2);
   }
   return JSON.stringify({ error: "adapter", message: result.message }, null, 2);
 }
@@ -38,6 +39,8 @@ export function register_resources(server: McpServer, ctx: Ctx): void {
           text: body_of(
             await invoke_suspec(ctx.env, "check", [], {
               bare: ["--contract"],
+              schema: ContractSchema,
+              output: "json",
             }),
           ),
         },

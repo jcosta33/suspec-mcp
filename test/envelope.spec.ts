@@ -10,20 +10,9 @@ const okResult = (data: unknown): SuspecResult => ({
 });
 
 describe("build_envelope", () => {
-  it("always sets noVerdictIssued:true and carries no verdict field of its own", () => {
+  it("uses only the lean public envelope fields", () => {
     const env = build_envelope(okResult({ level: "clean" }));
-    expect(env.noVerdictIssued).toBe(true);
-    // suspec-mcp's OWN keys never include a verdict/approval
-    for (const key of [
-      "verdict",
-      "pass",
-      "fail",
-      "merge",
-      "decision",
-      "approved",
-    ]) {
-      expect(Object.keys(env)).not.toContain(key);
-    }
+    expect(Object.keys(env).sort()).toEqual(["data", "ok", "source"]);
   });
 
   it("passes the CLI data through verbatim (including the CLI's own recorded level)", () => {
@@ -46,27 +35,26 @@ describe("build_envelope", () => {
     expect(env.source.exitCode).toBe(1);
   });
 
-  it("surfaces a structured CLI error as ok:false with the CLI's own message in note", () => {
+  it("surfaces a structured CLI error as ok:false without repeating its message", () => {
     const env = build_envelope({
       kind: "structured-error",
       invocation: {
         command: "suspec check r.md --spec s.md --json",
         exitCode: 2,
       },
-      error: {
+      data: [{
         error: "Usage",
         message:
           "the review names task `TASK-x`: missing --task — usage: suspec check <review-path> --spec <spec-path> --task <task-path>",
-      },
+      }],
     });
     expect(env.ok).toBe(false);
-    expect(env.noVerdictIssued).toBe(true);
-    expect(env.note).toMatch(/missing --task/);
-    expect(env.data).toEqual({
+    expect(env.note).toBeUndefined();
+    expect(env.data).toEqual([{
       error: "Usage",
       message:
         "the review names task `TASK-x`: missing --task — usage: suspec check <review-path> --spec <spec-path> --task <task-path>",
-    });
+    }]);
   });
 
   it("applies the slice in concise mode only; detailed keeps the verbatim payload", () => {
@@ -93,14 +81,14 @@ describe("build_envelope", () => {
       {
         kind: "structured-error",
         invocation: { command: "suspec check x.md --json", exitCode: 2 },
-        error: { error: "Usage", message: "file not found: x.md" },
+        data: [{ error: "Usage", message: "file not found: x.md" }],
       },
       { format: "concise", slice: () => ({ gutted: true }) },
     );
-    expect(env.data).toEqual({
+    expect(env.data).toEqual([{
       error: "Usage",
       message: "file not found: x.md",
-    });
+    }]);
   });
 });
 
@@ -119,7 +107,7 @@ describe("respond", () => {
     const result = respond(okResult({ level: "clean" }));
     expect("structuredContent" in result).toBe(true);
     if ("structuredContent" in result) {
-      expect(result.structuredContent.noVerdictIssued).toBe(true);
+      expect(result.structuredContent.ok).toBe(true);
     }
   });
 
@@ -139,18 +127,16 @@ describe("respond", () => {
     }
   });
 
-  it("the summary text describes runnability, never a result, and carries the error note", () => {
+  it("the summary text reports only command provenance and exit status", () => {
     const result = respond({
       kind: "structured-error",
       invocation: { command: "suspec check r.md --json", exitCode: 2 },
-      error: { error: "Usage", message: "missing --spec" },
+      data: [{ error: "Usage", message: "missing --spec" }],
     });
     expect("content" in result).toBe(true);
     if ("content" in result) {
       const summary = result.content[0]?.text ?? "";
-      expect(summary).toContain("ran; CLI refused invocation");
-      expect(summary).toContain("no verdict issued");
-      expect(summary).toContain("missing --spec");
+      expect(summary).toBe("suspec check r.md --json → exit 2");
     }
   });
 });

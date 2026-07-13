@@ -1,12 +1,12 @@
 // The concise projections for the tools. Each `slice_*` maps the CLI's VERBATIM `--json` payload to a
-// smaller, targeted view returned in concise `response_format` — the relevant slice an agent acts on,
-// vs the detailed (verbatim) payload. The rule: keep the IDENTIFIERS and the triage-bearing fields,
-// drop the echoes (a report's path echo, a diagnostic's line anchor, a check's human-readable name).
+// smaller, targeted view returned in concise `responseFormat` — the relevant slice an agent acts on,
+// vs the detailed (verbatim) payload. The rule: keep identifiers and triage-bearing fields, including
+// a diagnostic's available line anchor; drop path echoes and human-readable contract names.
 // Each slice is total + defensive: it reads only fields it knows and falls back to the verbatim data
 // if the shape is unrecognised, so concise never throws on a drifted payload (the contract tripwire
 // owns drift-detection; slicing must not become a second failure mode).
 //
-// These are PURE shape reducers — they add no field of their own and no verdict; they only omit.
+// These are pure shape reducers: they only omit fields.
 
 type Obj = Record<string, unknown>;
 
@@ -20,11 +20,11 @@ function as_array(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-// suspec check <artifact> → keep the outcome + the diagnostics' actionable triple
-// (code/severity/message); drop the path echo and line numbers (the detailed payload carries them).
+// suspec check <artifact> → keep the outcome + actionable diagnostics
+// (code/severity/message and an available line); drop the path echo.
 // An artifact whose type has no check face keeps its `{level, type, checked:false}` notice whole —
 // dropping `checked` would misread "nothing was validated" as "validated clean".
-export function slice_check_file(data: unknown): unknown {
+function slice_check_file(data: unknown): unknown {
   const check = as_obj(data);
   if (check === null) {
     return data;
@@ -49,9 +49,14 @@ export function slice_check_file(data: unknown): unknown {
         code: diag.code,
         severity: diag.severity,
         message: diag.message,
+        ...(Object.hasOwn(diag, "line") ? { line: diag.line } : {}),
       };
     }),
   };
+}
+
+export function slice_check_results(data: unknown): unknown {
+  return Array.isArray(data) ? data.map(slice_check_file) : data;
 }
 
 // suspec check --contract → version + each check's {id, severity}; drops the human-readable `name`.

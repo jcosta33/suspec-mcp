@@ -1,12 +1,5 @@
-// zod schemas mirroring the suspec CLI's real `--json` shapes (verified against the binary — the
-// path-explicit check surface of ADR-0143). These are the DRIFT TRIPWIRE — and here is exactly where it
-// fires: the TEST SUITE parses every checked-in fixture through these schemas (contract.spec.ts), and
-// generated-fixtures.spec.ts regenerates the fixtures against the real binary, so a renamed/dropped
-// field fails a test run. At RUNTIME nothing parses through these schemas — the payload reads go through
-// slices.ts's defensive helpers, which degrade to missing fields rather than failing loudly. So the wire
-// trips in CI/dev, not in the running server — do not read this file as a live runtime guarantee.
-// `.passthrough()` keeps unknown extra fields (additive CLI changes don't break us); the named fields
-// are the ones suspec-mcp actually reads.
+// Runtime schemas for every JSON document accepted from the CLI. Unknown additive fields pass through;
+// missing or malformed consumed fields fail the invocation instead of leaking partial data to clients.
 //
 // ENUM POLICY (AC-011, audit F7): a field is modelled as a CLOSED `z.enum` ONLY when the adapter
 // BRANCHES on its exact value-set. The adapter branches on NO payload enum on this surface — a
@@ -15,6 +8,34 @@
 // consumer benefit.
 
 import { z } from "zod";
+
+export const SUPPORTED_CONTRACT_VERSION = "0.18.0" as const;
+
+export const SUPPORTED_CHECKS = [
+  { id: "C001", name: "unique-ids", severity: "hard-error" },
+  { id: "C002", name: "duplicate-id", severity: "hard-error" },
+  { id: "C003", name: "verify-with", severity: "hard-error" },
+  { id: "C004", name: "one-strength-word", severity: "warning" },
+  { id: "C007", name: "no-tbd-at-ready", severity: "hard-error" },
+  { id: "C008", name: "sources-named", severity: "warning" },
+  { id: "C009", name: "broken-source-link", severity: "hard-error" },
+  { id: "C010", name: "preserves-refs-resolve", severity: "hard-error" },
+  { id: "C011", name: "waves-present", severity: "warning" },
+  { id: "C012", name: "coverage", severity: "warning" },
+  { id: "C013", name: "verify-evidence-binding", severity: "warning" },
+  { id: "C015", name: "citation-resolves", severity: "warning" },
+  { id: "C016", name: "supported-needs-evidence", severity: "hard-error" },
+  {
+    id: "C019",
+    name: "malformed-requirement-heading",
+    severity: "warning",
+  },
+  { id: "C020", name: "unresolvable-ref", severity: "hard-error" },
+  { id: "C021", name: "intent-present", severity: "hard-error" },
+  { id: "C022", name: "task-shape", severity: "hard-error" },
+  { id: "C023", name: "task-evidence", severity: "hard-error" },
+  { id: "C024", name: "closed-task-resolved", severity: "hard-error" },
+] as const;
 
 // --- suspec check <artifact> --json → the per-file check report ------------------------------------
 // One diagnostic from the checks contract: `code` is a contract C-code, `severity`/`level` are the
@@ -46,24 +67,81 @@ export const UncheckedArtifactSchema = z
   })
   .passthrough();
 
-// What `suspec check <artifact> --json` can emit on a success exit: a check report (spec, review,
-// change-plan) or the unchecked notice.
+// What `suspec check <artifact> --json` can emit on a success exit: a check report (spec, task,
+// review, change-plan) or the unchecked notice.
 export const CheckFileSchema = z.union([
   CheckReportSchema,
   UncheckedArtifactSchema,
 ]);
 
+export const CheckLineSchema = z.union([
+  CheckFileSchema,
+  z.object({ error: z.string(), message: z.string() }).passthrough(),
+]);
+
 // --- suspec check --contract --json → the checks contract ------------------------------------------
 // The contract dump is a bare object (no report wrapper): the contract version + every core check's
 // id/name/severity.
+const ContractCheckSchema = z
+  .object({ id: z.string(), name: z.string(), severity: z.string() })
+  .passthrough();
+
+const ContractChecksSchema = z.array(ContractCheckSchema).superRefine((checks, ctx) => {
+  const expectedById = new Map<string, (typeof SUPPORTED_CHECKS)[number]>(
+    SUPPORTED_CHECKS.map((check) => [check.id, check]),
+  );
+  const seen = new Set<string>();
+
+  for (const [index, check] of checks.entries()) {
+    if (seen.has(check.id)) {
+      ctx.addIssue({
+        code: "custom",
+        message: `duplicate check ID ${check.id}`,
+        path: [index, "id"],
+      });
+      continue;
+    }
+    seen.add(check.id);
+
+    const expected = expectedById.get(check.id);
+    if (expected === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: `unknown check ID ${check.id}`,
+        path: [index, "id"],
+      });
+      continue;
+    }
+    if (check.name !== expected.name) {
+      ctx.addIssue({
+        code: "custom",
+        message: `check ${check.id} must be named ${expected.name}`,
+        path: [index, "name"],
+      });
+    }
+    if (check.severity !== expected.severity) {
+      ctx.addIssue({
+        code: "custom",
+        message: `check ${check.id} must have severity ${expected.severity}`,
+        path: [index, "severity"],
+      });
+    }
+  }
+
+  for (const expected of SUPPORTED_CHECKS) {
+    if (!seen.has(expected.id)) {
+      ctx.addIssue({
+        code: "custom",
+        message: `missing check ID ${expected.id}`,
+      });
+    }
+  }
+});
+
 export const ContractSchema = z
   .object({
-    version: z.string(),
-    checks: z.array(
-      z
-        .object({ id: z.string(), name: z.string(), severity: z.string() })
-        .passthrough(),
-    ),
+    version: z.literal(SUPPORTED_CONTRACT_VERSION),
+    checks: ContractChecksSchema,
   })
   .passthrough();
 

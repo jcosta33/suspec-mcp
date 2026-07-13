@@ -9,6 +9,7 @@ import {
   CheckReportSchema,
   UncheckedArtifactSchema,
   CheckFileSchema,
+  CheckLineSchema,
   ContractSchema,
   SuspecErrorSchema,
 } from "../src/suspec/contract.ts";
@@ -43,6 +44,10 @@ function runStub(args: string[]): { data: unknown; exit: number | null } {
     writeFileSync(
       join(dir, "not-a-task.md"),
       "---\ntype: spec\nid: TASK-x\n---\n",
+    );
+    writeFileSync(
+      join(dir, "audit.md"),
+      "---\ntype: audit\nid: AUDIT-x\n---\n",
     );
     writeFileSync(
       join(dir, "scope-less-task.md"),
@@ -104,6 +109,14 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     }
   });
 
+  it("check <task> --json → a deterministic CheckReport", () => {
+    const parsed = CheckReportSchema.safeParse(fixture("check-task.json"));
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.path).toBe("task-demo.md");
+    }
+  });
+
   it("a diagnostic-carrying review report pins the diagnostic fields (code/severity/message/line)", () => {
     const parsed = CheckReportSchema.safeParse(
       fixture("check-review-diagnostics.json"),
@@ -136,7 +149,7 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     );
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect(parsed.data.type).toBe("task");
+      expect(parsed.data.type).toBe("audit");
       expect(parsed.data.checked).toBe(false);
     }
   });
@@ -144,6 +157,7 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
   it("every check capture parses under the CheckFile union", () => {
     for (const name of [
       "check-spec.json",
+      "check-task.json",
       "check-review.json",
       "check-review-diagnostics.json",
       "check-review-task-mismatch.json",
@@ -156,16 +170,61 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     }
   });
 
+  it("multi-path captures preserve report order and carry an optional C002 file-set report", () => {
+    const multiple = fixture("check-multiple.json") as unknown[];
+    expect(multiple).toHaveLength(2);
+    expect(multiple.every((item) => CheckFileSchema.safeParse(item).success)).toBe(true);
+
+    const duplicate = fixture("check-duplicate-id.json") as unknown[];
+    expect(duplicate).toHaveLength(3);
+    const setReport = CheckReportSchema.parse(duplicate[2]);
+    expect(setReport.path).toBe("(file set)");
+    expect(setReport.diagnostics.map((item) => item.code)).toContain("C002");
+  });
+
   it("check --contract --json → Contract (version + the core checks)", () => {
     const parsed = ContractSchema.safeParse(fixture("contract.json"));
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect(parsed.data.version).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(parsed.data.version).toBe("0.18.0");
       expect(parsed.data.checks.length).toBeGreaterThan(0);
       for (const check of parsed.data.checks) {
         expect(check.id).toMatch(/^C\d{3}$/);
       }
     }
+  });
+
+  it.each([
+    ["empty", (contract: { checks: unknown[] }) => contract.checks.splice(0)],
+    ["partial", (contract: { checks: unknown[] }) => contract.checks.splice(1)],
+    [
+      "duplicate ID",
+      (contract: { checks: unknown[] }) => contract.checks.push(contract.checks[0]),
+    ],
+    [
+      "unknown ID",
+      (contract: { checks: { id: string }[] }) => {
+        contract.checks[0].id = "C999";
+      },
+    ],
+    [
+      "corrupted name",
+      (contract: { checks: { name: string }[] }) => {
+        contract.checks[0].name = "renamed";
+      },
+    ],
+    [
+      "corrupted severity",
+      (contract: { checks: { severity: string }[] }) => {
+        contract.checks[0].severity = "warning";
+      },
+    ],
+  ])("rejects a %s 0.18.0 checks table", (_case, mutate) => {
+    const contract = fixture("contract.json") as {
+      checks: { id: string; name: string; severity: string }[];
+    };
+    mutate(contract);
+    expect(ContractSchema.safeParse(contract).success).toBe(false);
   });
 
   it("the conditional-companion refusal is a structured error (the review names a task, no --task handed)", () => {
@@ -247,9 +306,7 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     );
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect(parsed.data.message).toMatch(
-        /review `task:` must be a single scalar/,
-      );
+      expect(parsed.data.message).toMatch(/frontmatter `task:` must be a scalar/);
     }
   });
 
@@ -276,6 +333,12 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     );
     delete contract.checks;
     expect(ContractSchema.safeParse(contract).success).toBe(false);
+  });
+
+  it("the runtime line schema accepts reports and structured errors but rejects unknown documents", () => {
+    expect(CheckLineSchema.safeParse(fixture("check-spec.json")).success).toBe(true);
+    expect(CheckLineSchema.safeParse(fixture("error-missing-spec.json")).success).toBe(true);
+    expect(CheckLineSchema.safeParse({ malformed: true }).success).toBe(false);
   });
 
   it("a diagnostic's `severity` and a report's `level` are PASS-THROUGH: a new CLI value does NOT trip the wire", () => {
@@ -333,7 +396,7 @@ describe("the test stub conforms to the SAME contract as the real captured outpu
   });
 
   it("stub check on a no-check-face type parses against UncheckedArtifactSchema (exit 0)", () => {
-    const { data, exit } = runStub(["check", "task.md"]);
+    const { data, exit } = runStub(["check", "audit.md"]);
     expect(UncheckedArtifactSchema.safeParse(data).success).toBe(true);
     expect(exit).toBe(0);
   });

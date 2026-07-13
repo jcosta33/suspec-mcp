@@ -25,9 +25,12 @@ const checkedInDir = join(here, "fixtures");
 
 const FIXTURES = [
   "check-spec",
+  "check-task",
   "check-review",
   "check-review-diagnostics",
   "check-review-task-mismatch",
+  "check-multiple",
+  "check-duplicate-id",
   "check-unchecked",
   "contract",
   "error-missing-task",

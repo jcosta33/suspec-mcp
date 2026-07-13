@@ -1,0 +1,12 @@
+[
+  {
+    "level": "clean",
+    "path": "spec-demo.md",
+    "diagnostics": []
+  },
+  {
+    "level": "clean",
+    "path": "spec-second.md",
+    "diagnostics": []
+  }
+]

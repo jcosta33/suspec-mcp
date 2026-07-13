@@ -3,5 +3,7 @@
 const delay = process.argv.includes("slow") ? 300 : 0;
 
 setTimeout(() => {
-  process.stdout.write(JSON.stringify({ level: "clean", diagnostics: [] }));
+  process.stdout.write(
+    JSON.stringify({ level: "clean", path: "delayed.md", diagnostics: [] }),
+  );
 }, delay);

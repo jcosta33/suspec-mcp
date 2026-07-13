@@ -1,26 +1,14 @@
-// The result envelope every tool returns. Two invariants live here (both typed + tested):
-//   1. `noVerdictIssued: true` — a HARD, tested invariant. suspec-mcp relays the CLI's facts and never
-//      adds a assessment or acceptance result of its own.
-//   2. `data` is the CLI's `--json` output VERBATIM (or, in concise mode, a pure shape-reduction of
-//      it) — including the CLI's own honest fields (a report's `level`, a diagnostic's `severity`).
-//      suspec-mcp passes the CLI's recorded facts through; it does not scrub them and does not
-//      adjudicate them.
+// The minimal result envelope every successful tool dispatch returns.
 
 import { z } from "zod";
 
 import type { SuspecResult } from "./suspec/invoke.ts";
 
-const NO_VERDICT_NOTE =
-  "suspec-mcp relays the CLI's recorded facts — diagnostics, severity levels, exit codes — and issues " +
-  "no verdict. What those facts mean for the work is the human's call.";
-
 export type Envelope = Readonly<{
   ok: boolean;
-  noVerdictIssued: true;
-  noVerdictNote: string;
   source: { command: string; exitCode: number };
-  data: unknown; // the CLI --json verbatim (detailed), or a concise slice, or the structured CLI error
-  note?: string; // adapter-level context (a structured CLI error's own message)
+  data: unknown;
+  note?: string;
   responseFormat?: "concise" | "detailed"; // which slice `data` carries
 }>;
 
@@ -39,8 +27,6 @@ export const ENVELOPE_OUTPUT_SHAPE = {
         "check that found blocking diagnostics is still ok:true; read data.level / data.diagnostics / " +
         "source.exitCode for the CLI's own recorded facts",
     ),
-  noVerdictIssued: z.literal(true),
-  noVerdictNote: z.string(),
   source: z
     .object({
       command: z.string(),
@@ -77,21 +63,15 @@ export function build_envelope(
 ): Envelope {
   const format = opts.format;
   const base = {
-    noVerdictIssued: true as const,
-    noVerdictNote: NO_VERDICT_NOTE,
     source: result.invocation,
     ...(format !== undefined ? { responseFormat: format } : {}),
   };
 
   if (result.kind === "structured-error") {
-    // A structured CLI error is a FACT for the agent, not an adapter failure — e.g. a review checked
-    // without the companion its frontmatter names is the CLI refusing to run a shallower check. The
-    // CLI's own message travels in `note` verbatim.
     return {
       ...base,
       ok: false,
-      data: result.error,
-      note: result.error.message,
+      data: result.data,
     };
   }
 
@@ -111,9 +91,8 @@ export function tool_result(envelope: Envelope): {
 } {
   // The CLI ran for both envelope variants. A structured error means it refused this invocation,
   // not that the binary failed to launch; launch errors never reach this function.
-  const runState = envelope.ok ? "ran" : "ran; CLI refused invocation";
   const summaryLines = [
-    `${envelope.source.command} → ${runState} (no verdict issued)`,
+    `${envelope.source.command} → exit ${String(envelope.source.exitCode)}`,
   ];
   if (envelope.note !== undefined) {
     summaryLines.push(envelope.note);
@@ -139,7 +118,7 @@ export function tool_result(envelope: Envelope): {
 }
 
 // The single dispatch a tool uses: a launch-error (the `suspec` binary is missing / emitted no JSON)
-// becomes a tool error; a successful or structured-error result becomes a no-verdict envelope. `opts`
+// becomes a tool error; a successful or structured-error result becomes an envelope. `opts`
 // carries the concise/detailed format + the per-tool slice.
 export function respond(
   result: SuspecResult,
@@ -155,8 +134,7 @@ export function respond(
 }
 
 // An adapter-level failure (the `suspec` binary is missing / emitted no JSON) or an invalid path is a
-// tool error: text + `isError`, with NO structuredContent — so it does not have to satisfy (and cannot
-// violate) the success outputSchema. An error inherently issues no verdict.
+// tool error: text + `isError`, with no structuredContent.
 export function tool_error(message: string): {
   content: { type: "text"; text: string }[];
   isError: true;

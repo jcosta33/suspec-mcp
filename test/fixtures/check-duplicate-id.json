@@ -1,0 +1,24 @@
+[
+  {
+    "level": "clean",
+    "path": "spec-demo.md",
+    "diagnostics": []
+  },
+  {
+    "level": "clean",
+    "path": "spec-duplicate.md",
+    "diagnostics": []
+  },
+  {
+    "path": "(file set)",
+    "level": "blocking",
+    "diagnostics": [
+      {
+        "code": "C002",
+        "severity": "hard-error",
+        "message": "frontmatter id `SPEC-demo-feature` appears in both spec-demo.md and spec-duplicate.md (duplicate-id)",
+        "line": null
+      }
+    ]
+  }
+]

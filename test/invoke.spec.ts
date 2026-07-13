@@ -11,6 +11,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { invoke_suspec, type SuspecEnv } from "../src/suspec/invoke.ts";
+import { CheckFileSchema, ContractSchema } from "../src/suspec/contract.ts";
 
 // Direct unit tests for THE subprocess edge — the security/robustness boundary. These cover the
 // fact branches (ok / structured-error) plus every failure path (bad verb, bad flag, missing binary,
@@ -20,8 +21,21 @@ const stub = join(here, "fixtures", "stub-suspec.mjs");
 const nonjson = join(here, "fixtures", "nonjson-suspec.mjs");
 const delayed = join(here, "fixtures", "delayed-suspec.mjs");
 const ignoreTerm = join(here, "fixtures", "ignore-term-suspec.mjs");
+const invalidPayload = join(here, "fixtures", "invalid-payload-suspec.mjs");
 
 const env = (bin: string): SuspecEnv => ({ bin, cwd: here });
+const checkOptions = (
+  flags?: Readonly<Record<string, string>>,
+): Parameters<typeof invoke_suspec>[3] => ({
+  ...(flags === undefined ? {} : { flags }),
+  schema: CheckFileSchema,
+  output: "jsonl",
+});
+const contractOptions: Parameters<typeof invoke_suspec>[3] = {
+  bare: ["--contract"],
+  schema: ContractSchema,
+  output: "json",
+};
 
 // A scratch root carrying the artifacts the stub reads (it sniffs the checked file's
 // frontmatter like the real CLI).
@@ -44,7 +58,7 @@ function scratchEnv(bin: string): { env: SuspecEnv; cleanup: () => void } {
 
 describe("invoke_suspec — the subprocess edge", () => {
   it("refuses a non-allow-listed verb (defense-in-depth programming guard)", () => {
-    expect(() => invoke_suspec(env(stub), "rm", ["-rf", "/"])).toThrow(
+    expect(() => invoke_suspec(env(stub), "rm", ["-rf", "/"], checkOptions())).toThrow(
       /non-allow-listed/,
     );
   });
@@ -62,7 +76,7 @@ describe("invoke_suspec — the subprocess edge", () => {
       "evidence",
       "promote",
     ]) {
-      expect(() => invoke_suspec(env(stub), verb), verb).toThrow(
+      expect(() => invoke_suspec(env(stub), verb, [], checkOptions()), verb).toThrow(
         /non-allow-listed/,
       );
     }
@@ -71,7 +85,7 @@ describe("invoke_suspec — the subprocess edge", () => {
   it("always appends --json and never a mutation-shaped flag", async () => {
     const s = scratchEnv(stub);
     try {
-      const r = await invoke_suspec(s.env, "check", ["spec.md"]);
+      const r = await invoke_suspec(s.env, "check", ["spec.md"], checkOptions());
       expect(r.invocation.command).toMatch(/--json$/);
       expect(r.invocation.command).not.toMatch(
         /--write|--force|--agent|--launch/,
@@ -84,12 +98,12 @@ describe("invoke_suspec — the subprocess edge", () => {
   it('returns kind:"ok" with the parsed data on a check success (and relays the warnings exit code)', async () => {
     const s = scratchEnv(stub);
     try {
-      const r = await invoke_suspec(s.env, "check", ["spec.md"]);
+      const r = await invoke_suspec(s.env, "check", ["spec.md"], checkOptions());
       expect(r.kind).toBe("ok");
       expect(r.invocation.exitCode).toBe(1); // a warning report still parses as ok — the exit is a fact
       if (r.kind === "ok") {
         expect(
-          (r.data as { diagnostics: unknown[] }).diagnostics.length,
+          (r.data as { diagnostics: unknown[] }[])[0].diagnostics.length,
         ).toBeGreaterThan(0);
       }
     } finally {
@@ -100,9 +114,12 @@ describe("invoke_suspec — the subprocess edge", () => {
   it("passes the allow-listed companion flags (--spec/--task) through to check", async () => {
     const s = scratchEnv(stub);
     try {
-      const r = await invoke_suspec(s.env, "check", ["review.md"], {
-        flags: { "--spec": "spec.md", "--task": "task.md" },
-      });
+      const r = await invoke_suspec(
+        s.env,
+        "check",
+        ["review.md"],
+        checkOptions({ "--spec": "spec.md", "--task": "task.md" }),
+      );
       expect(r.kind).toBe("ok");
       expect(r.invocation.command).toBe(
         `${stub} check review.md --spec spec.md --task task.md --json`,
@@ -113,9 +130,7 @@ describe("invoke_suspec — the subprocess edge", () => {
   });
 
   it("passes the bare --contract flag through (the contract dump invocation)", async () => {
-    const r = await invoke_suspec(env(stub), "check", [], {
-      bare: ["--contract"],
-    });
+    const r = await invoke_suspec(env(stub), "check", [], contractOptions);
     expect(r.kind).toBe("ok");
     expect(r.invocation.command).toBe(`${stub} check --contract --json`);
     if (r.kind === "ok") {
@@ -126,9 +141,12 @@ describe("invoke_suspec — the subprocess edge", () => {
   it("refuses a non-allow-listed VALUED flag (a slip that tried --from or --write would throw)", () => {
     for (const flag of ["--write", "--launch", "--from", "--scope", "--base"]) {
       expect(() =>
-        invoke_suspec(env(stub), "check", ["spec.md"], {
-          flags: { [flag]: "x" },
-        }),
+        invoke_suspec(
+          env(stub),
+          "check",
+          ["spec.md"],
+          checkOptions({ [flag]: "x" }),
+        ),
       ).toThrow(/non-allow-listed flag/);
     }
   });
@@ -136,7 +154,11 @@ describe("invoke_suspec — the subprocess edge", () => {
   it("refuses a non-allow-listed BARE flag (only --contract passes)", () => {
     for (const flag of ["--staleness", "--force", "--json"]) {
       expect(() =>
-        invoke_suspec(env(stub), "check", [], { bare: [flag] }),
+        invoke_suspec(env(stub), "check", [], {
+          bare: [flag],
+          schema: ContractSchema,
+          output: "json",
+        }),
       ).toThrow(/non-allow-listed flag/);
     }
   });
@@ -163,7 +185,10 @@ describe("invoke_suspec — the subprocess edge", () => {
         { ...s.env, bin: spacedBin },
         "check",
         ["review path.md"],
-        { flags: { "--spec": "spec path.md", "--task": "task path.md" } },
+        checkOptions({
+          "--spec": "spec path.md",
+          "--task": "task path.md",
+        }),
       );
       expect(r.invocation.command).toBe(
         `'${spacedBin}' check 'review path.md' --spec 'spec path.md' --task 'task path.md' --json`,
@@ -181,12 +206,17 @@ describe("invoke_suspec — the subprocess edge", () => {
     }, 25);
 
     const slow = Promise.resolve(
-      invoke_suspec(env(delayed), "check", ["slow"]),
+      invoke_suspec(env(delayed), "check", ["slow"], checkOptions()),
     );
     await new Promise((resolve) => setTimeout(resolve, 75));
     expect(timerElapsed).toBeLessThan(150);
 
-    const fast = await invoke_suspec(env(delayed), "check", ["fast"]);
+    const fast = await invoke_suspec(
+      env(delayed),
+      "check",
+      ["fast"],
+      checkOptions(),
+    );
     expect(fast.kind).toBe("ok");
     expect((await slow).kind).toBe("ok");
   });
@@ -197,6 +227,7 @@ describe("invoke_suspec — the subprocess edge", () => {
       { bin: ignoreTerm, cwd: here, timeoutMs: 100 },
       "check",
       ["slow"],
+      checkOptions(),
     );
     expect(Date.now() - started).toBeLessThan(300);
     expect(result.kind).toBe("launch-error");
@@ -206,14 +237,18 @@ describe("invoke_suspec — the subprocess edge", () => {
     const s = scratchEnv(stub);
     try {
       // the conditional-companion refusal: the review names a task, no --task handed
-      const r = await invoke_suspec(s.env, "check", ["review.md"], {
-        flags: { "--spec": "spec.md" },
-      });
+      const r = await invoke_suspec(
+        s.env,
+        "check",
+        ["review.md"],
+        checkOptions({ "--spec": "spec.md" }),
+      );
       expect(r.kind).toBe("structured-error");
       expect(r.invocation.exitCode).toBe(2);
       if (r.kind === "structured-error") {
-        expect(r.error.error).toBe("Usage");
-        expect(r.error.message).toMatch(/missing --task/);
+        const error = (r.data as { error: string; message: string }[])[0];
+        expect(error.error).toBe("Usage");
+        expect(error.message).toMatch(/missing --task/);
       }
     } finally {
       s.cleanup();
@@ -225,6 +260,7 @@ describe("invoke_suspec — the subprocess edge", () => {
       env("/nonexistent/suspec-does-not-exist"),
       "check",
       ["x.md"],
+      checkOptions(),
     );
     expect(r.kind).toBe("launch-error");
     if (r.kind === "launch-error") {
@@ -233,7 +269,12 @@ describe("invoke_suspec — the subprocess edge", () => {
   });
 
   it('returns kind:"launch-error" with the stderr tail when output is non-JSON', async () => {
-    const r = await invoke_suspec(env(nonjson), "check", ["garbage"]);
+    const r = await invoke_suspec(
+      env(nonjson),
+      "check",
+      ["garbage"],
+      checkOptions(),
+    );
     expect(r.kind).toBe("launch-error");
     if (r.kind === "launch-error") {
       expect(r.message).toMatch(/no parseable JSON/);
@@ -242,7 +283,12 @@ describe("invoke_suspec — the subprocess edge", () => {
   });
 
   it('returns kind:"launch-error" when the CLI produces empty output', async () => {
-    const r = await invoke_suspec(env(nonjson), "check", ["empty"]);
+    const r = await invoke_suspec(
+      env(nonjson),
+      "check",
+      ["empty"],
+      checkOptions(),
+    );
     expect(r.kind).toBe("launch-error");
     if (r.kind === "launch-error") {
       expect(r.message).toMatch(/no parseable JSON/);
@@ -253,10 +299,28 @@ describe("invoke_suspec — the subprocess edge", () => {
     // execFile throws synchronously on a NUL byte. The input guards reject it upstream, but the
     // try/catch is defense-in-depth — a throw must still become a launch-error, not propagate.
     // (\x00 escape, not a raw byte: a raw NUL renders as whitespace and hides what this tests.)
-    const r = await invoke_suspec(env(stub), "check", ["bad\x00path.md"]);
+    const r = await invoke_suspec(
+      env(stub),
+      "check",
+      ["bad\x00path.md"],
+      checkOptions(),
+    );
     expect(r.kind).toBe("launch-error");
     if (r.kind === "launch-error") {
       expect(r.message).toMatch(/could not run/);
+    }
+  });
+
+  it("rejects the whole JSONL stream when any document violates the runtime schema", async () => {
+    const result = await invoke_suspec(
+      env(invalidPayload),
+      "check",
+      ["/first.md", "/second.md"],
+      checkOptions(),
+    );
+    expect(result.kind).toBe("launch-error");
+    if (result.kind === "launch-error") {
+      expect(result.message).toMatch(/violates the supported contract/);
     }
   });
 });

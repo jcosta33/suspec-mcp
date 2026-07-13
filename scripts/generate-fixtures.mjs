@@ -56,7 +56,7 @@ process.stderr.write(
 // Run `suspec <args> --json` in `cwd`; return the parsed JSON (or throw a clear error). Structured
 // errors (an `{error, message}` body with exit 2) are as much a captured shape as a success report,
 // so the parsed object is returned either way — the caller names what it expects.
-function suspec(cwd, args) {
+function suspecOutput(cwd, args) {
   const res = spawnSync(process.execPath, [suspecBin, ...args, "--json"], {
     cwd,
     encoding: "utf8",
@@ -68,7 +68,18 @@ function suspec(cwd, args) {
       `suspec ${args.join(" ")} produced no JSON (exit ${res.status}): ${(res.stderr ?? "").trim()}`,
     );
   }
-  return JSON.parse(stdout);
+  return stdout;
+}
+
+function suspec(cwd, args) {
+  return JSON.parse(suspecOutput(cwd, args));
+}
+
+function suspecJsonl(cwd, args) {
+  return suspecOutput(cwd, args)
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line));
 }
 
 function write(name, value) {
@@ -77,7 +88,7 @@ function write(name, value) {
   process.stderr.write(`  wrote ${name}.json\n`);
 }
 
-// A complete, ready 2-AC spec — the review's always-required companion, and the clean spec-check
+// A complete, ready 2-AC spec — the review's always-required companion, and a clean spec check
 // subject.
 const SPEC = [
   "---",
@@ -142,9 +153,57 @@ const TASK = [
   "",
   "# Task",
   "",
+  "## Source",
+  "",
+  "SPEC-demo-feature",
+  "",
+  "## Scope",
+  "",
+  "AC-001",
+  "",
+  "## Do not change",
+  "",
+  "None.",
+  "",
+  "## Affected areas",
+  "",
+  "src-file.txt",
+  "",
+  "## Verify",
+  "",
+  "```text",
+  "tests passed",
+  "```",
+  "",
+  "## Agent instructions",
+  "",
+  "Implement AC-001.",
+  "",
+  "## Findings",
+  "",
+  "None.",
+  "",
   "## Run summary",
   "",
+  "Evidence is recorded under Verify.",
+  "",
 ].join("\n");
+
+const AUDIT = [
+  "---",
+  "type: audit",
+  "id: AUDIT-demo",
+  "---",
+  "",
+  "# Audit",
+  "",
+].join("\n");
+
+const SPEC_SECOND = SPEC.replaceAll("SPEC-demo-feature", "SPEC-demo-second").replace(
+  "# Demo feature",
+  "# Second demo feature",
+);
+const SPEC_DUPLICATE = SPEC.replace("# Demo feature", "# Duplicate demo feature");
 
 const NOT_A_TASK = [
   "---",
@@ -294,6 +353,9 @@ function main() {
     process.stderr.write(`generating fixtures in ${scratch}\n`);
     writeFileSync(join(scratch, "spec-demo.md"), SPEC);
     writeFileSync(join(scratch, "task-demo.md"), TASK);
+    writeFileSync(join(scratch, "audit-demo.md"), AUDIT);
+    writeFileSync(join(scratch, "spec-second.md"), SPEC_SECOND);
+    writeFileSync(join(scratch, "spec-duplicate.md"), SPEC_DUPLICATE);
     writeFileSync(join(scratch, "not-a-task.md"), NOT_A_TASK);
     writeFileSync(join(scratch, "task-empty-scope.md"), TASK_EMPTY_SCOPE);
     writeFileSync(join(scratch, "task-wrong-source.md"), TASK_WRONG_SOURCE);
@@ -311,6 +373,7 @@ function main() {
     // 1. the per-file check reports: a clean spec, a clean review (both companions), and a
     //    diagnostic-carrying review.
     write("check-spec", suspec(scratch, ["check", "spec-demo.md"]));
+    write("check-task", suspec(scratch, ["check", "task-demo.md"]));
     write(
       "check-review",
       suspec(scratch, [
@@ -344,9 +407,17 @@ function main() {
         "task-demo.md",
       ]),
     );
+    write(
+      "check-multiple",
+      suspecJsonl(scratch, ["check", "spec-demo.md", "spec-second.md"]),
+    );
+    write(
+      "check-duplicate-id",
+      suspecJsonl(scratch, ["check", "spec-demo.md", "spec-duplicate.md"]),
+    );
 
     // 2. an artifact whose type has no check face — the unchecked notice.
-    write("check-unchecked", suspec(scratch, ["check", "task-demo.md"]));
+    write("check-unchecked", suspec(scratch, ["check", "audit-demo.md"]));
 
     // 3. the checks contract.
     write("contract", suspec(scratch, ["check", "--contract"]));
@@ -365,8 +436,8 @@ function main() {
       suspec(scratch, ["check", "spec-demo.md", "--spec", "spec-demo.md"]),
     );
 
-    // 6. the structured error when a handed companion path does not exist on disk — lexically fine
-    //    (confinement lets a not-yet-existing path through), so the CLI's refusal is the backstop.
+    // 6. the structured error when a handed companion path does not exist on disk — the path is
+    //    syntactically valid, so the CLI's refusal is the backstop.
     write(
       "error-companion-not-found",
       suspec(scratch, [

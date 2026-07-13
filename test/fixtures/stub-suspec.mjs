@@ -9,6 +9,8 @@
 import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
+import { validContract } from "./valid-contract.mjs";
+
 const argv = process.argv.slice(2);
 if (process.env.STUB_LOG) {
   appendFileSync(process.env.STUB_LOG, JSON.stringify(argv) + "\n");
@@ -25,7 +27,7 @@ if (
   appendFileSync(join(process.cwd(), "WRITE-FLAG-SEEN"), "1");
 }
 
-const emit = (obj) => process.stdout.write(JSON.stringify(obj));
+const emit = (obj) => process.stdout.write(`${JSON.stringify(obj)}\n`);
 const fail = (message) => {
   emit({ error: "Usage", message });
   process.exit(2);
@@ -100,13 +102,7 @@ if (verb !== "check") {
 }
 
 if (argv.includes("--contract")) {
-  emit({
-    version: "0.17.0",
-    checks: [
-      { id: "C001", name: "unique-ids", severity: "hard-error" },
-      { id: "C004", name: "one-strength-word", severity: "warning" },
-    ],
-  });
+  emit(validContract);
   process.exit(0);
 }
 
@@ -123,25 +119,33 @@ for (let i = 1; i < argv.length; i += 1) {
   }
   positionals.push(token);
 }
-const file = positionals[0];
-if (!file) {
+if (positionals.length === 0) {
   fail("no artifact named — usage: suspec check <artifact> [<artifact>...]");
 }
-if (!existsSync(file)) {
-  fail(`file not found: ${file}`);
-}
-if (statSync(file).isDirectory()) {
+const artifacts = positionals.map((file) => {
+  if (!existsSync(file)) {
+    fail(`file not found: ${file}`);
+  }
+  if (statSync(file).isDirectory()) {
+    fail(
+      `not an artifact file (it is a directory): ${file} — point at the file inside it`,
+    );
+  }
+  const source = readFileSync(file, "utf8");
+  const head = frontmatter(source);
+  return { file, source, head, type: scalar(head, "type") ?? null };
+});
+const reviews = artifacts.filter((artifact) => artifact.type === "review");
+if (reviews.length > 0 && artifacts.length > 1) {
   fail(
-    `not an artifact file (it is a directory): ${file} — point at the file inside it`,
+    "a review packet is checked alone — usage: suspec check <review-path> --spec <spec-path> [--task <task-path>]",
   );
 }
-const source = readFileSync(file, "utf8");
-const head = frontmatter(source);
-const type = scalar(head, "type") ?? null;
+const { file, head, type } = artifacts[0];
 
 // The companion flags belong to a review and nothing else, mirrored from the real CLI.
 if (
-  type !== "review" &&
+  reviews.length === 0 &&
   (flag("--spec") !== undefined || flag("--task") !== undefined)
 ) {
   fail(
@@ -164,7 +168,7 @@ if (type === "review") {
     }
   }
   if (isBlockList(head, "task")) {
-    fail("review `task:` must be a single scalar, not a list");
+    fail("frontmatter `task:` must be a scalar");
   }
   const taskRef = scalar(head, "task");
   const task = flag("--task");
@@ -188,7 +192,7 @@ if (type === "review") {
   const specType = scalar(specHead, "type");
   if (specType !== undefined && specType !== "spec") {
     fail(
-      `--spec companion must have \`type: spec\` or omit \`type:\`; received ${specType}`,
+      `--spec companion must have \`type: spec\`; received ${specType}`,
     );
   }
   if (task !== undefined) {
@@ -244,19 +248,46 @@ if (type === "review") {
   process.exit(0);
 }
 
-// An artifact whose type has NO check face: the CLI says so cleanly and exits 0.
-if (type !== null && type !== "spec" && type !== "change-plan") {
-  emit({ level: "clean", path: file, type, checked: false });
-  process.exit(0);
+let status = 0;
+for (const artifact of artifacts) {
+  if (["audit", "inventory", "research", "inspection"].includes(artifact.type)) {
+    emit({
+      level: "clean",
+      path: artifact.file,
+      type: artifact.type,
+      checked: false,
+    });
+    continue;
+  }
+  emit({
+    level: "warning",
+    path: artifact.file,
+    diagnostics: [
+      { code: "C004", severity: "warning", message: "demo", line: 1 },
+    ],
+  });
+  status = Math.max(status, 1);
 }
 
-// A spec / change-plan / type-less file: a deterministic one-warning report (exit 1, the CLI's
-// warnings exit).
-emit({
-  level: "warning",
-  path: file,
-  diagnostics: [
-    { code: "C004", severity: "warning", message: "demo", line: 1 },
-  ],
-});
-process.exit(1);
+const firstPathById = new Map();
+const duplicateDiagnostics = [];
+for (const artifact of artifacts) {
+  const id = scalar(artifact.head, "id");
+  if (id === undefined) continue;
+  const first = firstPathById.get(id);
+  if (first !== undefined) {
+    duplicateDiagnostics.push({
+      code: "C002",
+      severity: "hard-error",
+      message: `artifact id ${id} is reused by ${first} and ${artifact.file}`,
+      line: null,
+    });
+  } else {
+    firstPathById.set(id, artifact.file);
+  }
+}
+if (duplicateDiagnostics.length > 0) {
+  emit({ path: "(file set)", level: "blocking", diagnostics: duplicateDiagnostics });
+  status = 2;
+}
+process.exit(status);

@@ -39,31 +39,27 @@ describe("real stdio transport", () => {
     await client.connect(transport);
     try {
       const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-      expect(tools).toEqual(["suspec_check_file", "suspec_get_checks"]);
+      expect(tools).toEqual(["suspec_check", "suspec_get_checks"]);
 
       const checks = (await client.callTool({
         name: "suspec_get_checks",
         arguments: {},
       })) as {
         structuredContent: {
-          noVerdictIssued: boolean;
           data: { version: string };
         };
       };
-      expect(checks.structuredContent.noVerdictIssued).toBe(true);
-      expect(checks.structuredContent.data.version).toBe("0.17.0");
+      expect(checks.structuredContent.data.version).toBe("0.18.0");
 
       const check = (await client.callTool({
-        name: "suspec_check_file",
-        arguments: { path: join(root, "specs", "x.md") },
+        name: "suspec_check",
+        arguments: { paths: [join(root, "specs", "x.md")] },
       })) as {
         structuredContent: {
-          noVerdictIssued: boolean;
-          data: { diagnostics: unknown[] };
+          data: { diagnostics: unknown[] }[];
         };
       };
-      expect(check.structuredContent.noVerdictIssued).toBe(true);
-      expect(check.structuredContent.data.diagnostics.length).toBeGreaterThan(
+      expect(check.structuredContent.data[0].diagnostics.length).toBeGreaterThan(
         0,
       );
     } finally {

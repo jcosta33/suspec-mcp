@@ -12,8 +12,20 @@ import { create_server } from "../src/server.ts";
 // transport, against the stub. STUB_LOG records every subprocess argv.
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 const stubBin = join(fixtures, "stub-suspec.mjs");
-const errorBin = join(fixtures, "error-suspec.mjs"); // always emits a structured CLI error
-const nonjsonBin = join(fixtures, "nonjson-suspec.mjs"); // emits non-JSON → launch-error
+const errorBin = join(fixtures, "error-after-contract-suspec.mjs");
+const nonjsonBin = join(fixtures, "nonjson-after-contract-suspec.mjs");
+const oldContractBin = join(fixtures, "old-contract-suspec.mjs");
+const malformedContracts = [
+  ["empty-contract-suspec.mjs", /missing check ID C001/],
+  ["partial-contract-suspec.mjs", /missing check ID C024/],
+  ["duplicate-contract-suspec.mjs", /duplicate check ID C001/],
+  ["unknown-contract-suspec.mjs", /unknown check ID C999/],
+  ["corrupted-contract-suspec.mjs", /must be named unique-ids/],
+  [
+    "corrupted-severity-contract-suspec.mjs",
+    /must have severity hard-error/,
+  ],
+] as const;
 
 let root: string;
 let logPath: string;
@@ -44,7 +56,7 @@ function invocations(): string[][] {
 async function connect(
   bin: string = stubBin,
 ): Promise<{ client: Client; close: () => Promise<void> }> {
-  const server = create_server({ env: { bin, cwd: root } });
+  const server = await create_server({ env: { bin, cwd: root } });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "t", version: "0" });
   await server.connect(st);
@@ -60,29 +72,6 @@ async function connect(
 
 const firstText = (r: { contents: { text?: string }[] }): string =>
   r.contents[0]?.text ?? "";
-
-// Symmetric to the tool sweep (server.spec INV-002): no resource body may carry a suspec-mcp-AUTHORED
-// verdict key. The resource serves the CLI's data verbatim, so no forbidden key should appear.
-const FORBIDDEN_VERDICT_KEYS = [
-  "verdict",
-  "pass",
-  "fail",
-  "merge",
-  "decision",
-  "approved",
-  "mergeAllowed",
-];
-function collect_keys(obj: unknown, acc: string[] = []): string[] {
-  if (Array.isArray(obj)) {
-    for (const v of obj) collect_keys(v, acc);
-  } else if (obj !== null && typeof obj === "object") {
-    for (const [k, v] of Object.entries(obj)) {
-      acc.push(k);
-      collect_keys(v, acc);
-    }
-  }
-  return acc;
-}
 
 describe("suspec-mcp resources", () => {
   it("lists exactly the checks-contract resource and no templated resource", async () => {
@@ -109,27 +98,12 @@ describe("suspec-mcp resources", () => {
         version: string;
         checks: { id: string }[];
       };
-      expect(parsed.version).toBe("0.17.0");
+      expect(parsed.version).toBe("0.18.0");
       expect(parsed.checks.length).toBeGreaterThan(0);
-      expect(invocations()).toEqual([["check", "--contract", "--json"]]);
-    } finally {
-      await close();
-    }
-  });
-
-  it("no resource body carries a suspec-mcp-authored verdict key (INV-002, symmetric to the tool sweep)", async () => {
-    const { client, close } = await connect();
-    try {
-      const text = firstText(
-        await client.readResource({ uri: "suspec://checks" }),
-      );
-      const keys = collect_keys(JSON.parse(text));
-      for (const forbidden of FORBIDDEN_VERDICT_KEYS) {
-        expect(
-          keys,
-          `suspec://checks must not author a "${forbidden}" key`,
-        ).not.toContain(forbidden);
-      }
+      expect(invocations()).toEqual([
+        ["check", "--contract", "--json"],
+        ["check", "--contract", "--json"],
+      ]);
     } finally {
       await close();
     }
@@ -159,4 +133,21 @@ describe("suspec-mcp resources", () => {
       await close();
     }
   });
+
+  it("refuses startup when the CLI contract version is not exactly supported", async () => {
+    await expect(
+      create_server({ env: { bin: oldContractBin, cwd: root } }),
+    ).rejects.toThrow(/checks contract 0\.18\.0/);
+  });
+
+  it.each(malformedContracts)(
+    "refuses startup when the exact checks table is malformed: %s",
+    async (name, structuralError) => {
+      await expect(
+        create_server({ env: { bin: join(fixtures, name), cwd: root } }),
+      ).rejects.toThrow(
+        new RegExp(`checks contract 0\\.18\\.0.*${structuralError.source}`),
+      );
+    },
+  );
 });

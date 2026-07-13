@@ -45,19 +45,17 @@ describe("bin/suspec-mcp.js launcher", () => {
     await client.connect(transport);
     try {
       const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-      expect(tools).toEqual(["suspec_check_file", "suspec_get_checks"]);
+      expect(tools).toEqual(["suspec_check", "suspec_get_checks"]);
 
       const check = (await client.callTool({
-        name: "suspec_check_file",
-        arguments: { path: join(root, "specs", "x.md") },
+        name: "suspec_check",
+        arguments: { paths: [join(root, "specs", "x.md")] },
       })) as {
         structuredContent: {
-          noVerdictIssued: boolean;
-          data: { diagnostics: unknown[] };
+          data: { diagnostics: unknown[] }[];
         };
       };
-      expect(check.structuredContent.noVerdictIssued).toBe(true);
-      expect(check.structuredContent.data.diagnostics.length).toBeGreaterThan(
+      expect(check.structuredContent.data[0].diagnostics.length).toBeGreaterThan(
         0,
       );
     } finally {

@@ -1,6 +1,6 @@
 {
   "level": "clean",
-  "path": "task-demo.md",
-  "type": "task",
+  "path": "audit-demo.md",
+  "type": "audit",
   "checked": false
 }

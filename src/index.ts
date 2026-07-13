@@ -42,7 +42,7 @@ export function parse_config(
 /* v8 ignore start -- the process entry; create_server + parse_config are unit-tested directly */
 async function main(): Promise<void> {
   const { bin } = parse_config(process.argv.slice(2), process.env);
-  const server = create_server({ env: { bin, cwd: process.cwd() } });
+  const server = await create_server({ env: { bin, cwd: process.cwd() } });
   await server.connect(new StdioServerTransport());
   process.stderr.write(`suspec-mcp: ready (suspec=${bin})\n`);
 }

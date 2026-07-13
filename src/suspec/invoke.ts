@@ -7,6 +7,9 @@
 // repos only through the public, tested JSON interface.
 
 import { execFile, type ExecFileException } from "node:child_process";
+import { z } from "zod";
+
+import { SuspecErrorSchema } from "./contract.ts";
 
 export type SuspecEnv = Readonly<{
   bin: string; // the `suspec` binary (env SUSPEC_BIN, else 'suspec' on PATH)
@@ -39,7 +42,7 @@ export type SuspecResult =
   | Readonly<{
       kind: "structured-error";
       invocation: SuspecInvocation;
-      error: { error: string; message: string };
+      data: unknown;
     }>
   | Readonly<{
       kind: "launch-error";
@@ -83,15 +86,25 @@ function run_cli(
   });
 }
 
-function has_error_field(
-  value: unknown,
-): value is { error: string; message: string } {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as Record<string, unknown>).error === "string" &&
-    typeof (value as Record<string, unknown>).message === "string"
-  );
+function parse_json(text: string): unknown {
+  return JSON.parse(text);
+}
+
+function parse_jsonl(text: string): unknown[] {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map(parse_json);
+}
+
+function validation_message(error: z.ZodError): string {
+  const issues = error.issues
+    .map((issue) => {
+      const path = issue.path.length > 0 ? issue.path.join(".") : "payload";
+      return `${path}: ${issue.message}`;
+    })
+    .join("; ");
+  return `CLI JSON violates the supported contract: ${issues}`;
 }
 
 export function invoke_suspec(
@@ -101,7 +114,9 @@ export function invoke_suspec(
   opts: {
     flags?: Readonly<Record<string, string>>;
     bare?: readonly string[];
-  } = {},
+    schema: z.ZodTypeAny;
+    output: "json" | "jsonl";
+  },
 ): Promise<SuspecResult> {
   if (!ALLOWED_VERBS.has(verb)) {
     // Defense in depth — the tools only ever pass allow-listed verbs; this catches a programming slip.
@@ -154,7 +169,12 @@ export function invoke_suspec(
 
       let parsed: unknown;
       try {
-        parsed = stdout.length > 0 ? JSON.parse(stdout) : undefined;
+        parsed =
+          stdout.length > 0
+            ? opts.output === "jsonl"
+              ? parse_jsonl(stdout)
+              : parse_json(stdout)
+            : undefined;
       } catch {
         parsed = undefined;
       }
@@ -166,10 +186,27 @@ export function invoke_suspec(
           message: `\`${command}\` produced no parseable JSON (exit ${exitCode})${stderr ? `: ${stderr}` : ""}`,
         };
       }
-      if (has_error_field(parsed)) {
-        return { kind: "structured-error", invocation, error: parsed };
+      const wireSchema = z.union([opts.schema, SuspecErrorSchema]);
+      const documents = opts.output === "jsonl" ? (parsed as unknown[]) : [parsed];
+      const validated: unknown[] = [];
+      for (const document of documents) {
+        const result = wireSchema.safeParse(document);
+        if (!result.success) {
+          return {
+            kind: "launch-error",
+            invocation,
+            message: validation_message(result.error),
+          };
+        }
+        validated.push(result.data);
       }
-      return { kind: "ok", invocation, data: parsed };
+      const data = opts.output === "jsonl" ? validated : validated[0];
+      const hasStructuredError = validated.some(
+        (document) => SuspecErrorSchema.safeParse(document).success,
+      );
+      return hasStructuredError
+        ? { kind: "structured-error", invocation, data }
+        : { kind: "ok", invocation, data };
     })
     .catch(
       (caught: unknown): SuspecResult => ({

@@ -1,10 +1,7 @@
-// The Suspec MCP tool surface — the CLI's two invocations (ADR-0143), path-explicit, behind the
-// no-verdict envelope:
-//   • suspec_check_file — run the checks contract over ONE artifact the caller names by path. The
-//     artifact's kind is read from its own frontmatter; a review packet's companions are explicit
-//     `spec`/`task` full-path params, passed through unchanged.
+// The Suspec MCP tool surface:
+//   • suspec_check — run one CLI process over an ordered artifact path set. A lone review may carry
+//     explicit spec/task companions.
 //   • suspec_get_checks — the checks contract itself (`suspec check --contract`).
-// Both tools relay the CLI's recorded facts — diagnostics, severity level, exit code — never a verdict.
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -12,7 +9,8 @@ import { isAbsolute } from "node:path";
 
 import { type SuspecEnv, invoke_suspec } from "./suspec/invoke.ts";
 import { respond, tool_error, ENVELOPE_OUTPUT_SHAPE } from "./envelope.ts";
-import { slice_check_file, slice_contract } from "./slices.ts";
+import { slice_check_results, slice_contract } from "./slices.ts";
+import { CheckFileSchema, ContractSchema } from "./suspec/contract.ts";
 
 export type Ctx = Readonly<{ env: SuspecEnv }>;
 
@@ -27,7 +25,7 @@ const READ_ONLY = {
 // (the default) is the targeted slice an agent acts on (the .describe() string below is the
 // model-facing copy).
 const responseFormatInput = {
-  response_format: z
+  responseFormat: z
     .enum(["concise", "detailed"])
     .optional()
     .describe(
@@ -55,60 +53,67 @@ function path_error(role: "artifact" | "spec" | "task") {
 
 export function register_tools(server: McpServer, ctx: Ctx): void {
   server.registerTool(
-    "suspec_check_file",
+    "suspec_check",
     {
-      title: "Check one Suspec artifact file",
+      title: "Check Suspec artifacts",
       description:
-        "Run the Suspec checks contract over ONE artifact file via `suspec check <artifact>`. The " +
-        "artifact's kind is read from its own frontmatter `type:`: a spec runs the spec checks, a " +
-        "change-plan the plan checks, and a review packet reconciles against the companion files you " +
-        "pass explicitly — `spec` is always required for a review, and `task` is required exactly when " +
-        "the review's frontmatter names a `task:` (the CLI refuses a missing or unreferenced companion " +
-        "with a blocking error rather than silently checking less; that refusal surfaces here as " +
-        "ok:false with the CLI's message). Every path — the artifact and both companions — must be a " +
-        "full path and is passed to the CLI unchanged. This single-file surface cannot run cross-file C002; " +
-        "use the CLI directly for duplicate-ID checks across a file set. Returns the CLI's diagnostics, " +
-        "severity level, and exit code (0 clean, 1 warnings, 2 blocking) — facts, never a verdict.",
+        "Run one `suspec check` process over an ordered non-empty array of absolute artifact paths. " +
+        "Batching enables cross-file checks such as C002. A review must be the only primary path and " +
+        "may receive absolute specPath and taskPath companions. Returns the CLI reports in output order.",
       inputSchema: {
-        path: z.string().describe("full path to the artifact file"),
-        spec: z
+        paths: z
+          .array(z.string())
+          .min(1)
+          .describe("ordered non-empty array of absolute artifact paths"),
+        specPath: z
           .string()
           .optional()
           .describe(
-            "full path to the source spec a review packet reconciles against (required for a review)",
+            "absolute source-spec path for a single review target",
           ),
-        task: z
+        taskPath: z
           .string()
           .optional()
           .describe(
-            "full path to the task packet whose scope keys the review's coverage (required exactly when the review's frontmatter names a `task:`)",
+            "absolute task-packet path for a single review target",
           ),
         ...responseFormatInput,
       },
       outputSchema: ENVELOPE_OUTPUT_SHAPE,
       annotations: READ_ONLY,
     },
-    async ({ path, spec, task, response_format }) => {
-      if (!is_full_path(path)) {
-        return path_error("artifact");
+    async ({ paths, specPath, taskPath, responseFormat }) => {
+      for (const path of paths) {
+        if (!is_full_path(path)) {
+          return path_error("artifact");
+        }
       }
       const flags: Record<string, string> = {};
-      if (spec !== undefined) {
-        if (!is_full_path(spec)) {
+      if ((specPath !== undefined || taskPath !== undefined) && paths.length !== 1) {
+        return tool_error(
+          "specPath/taskPath are valid only when paths contains exactly one review target",
+        );
+      }
+      if (specPath !== undefined) {
+        if (!is_full_path(specPath)) {
           return path_error("spec");
         }
-        flags["--spec"] = spec;
+        flags["--spec"] = specPath;
       }
-      if (task !== undefined) {
-        if (!is_full_path(task)) {
+      if (taskPath !== undefined) {
+        if (!is_full_path(taskPath)) {
           return path_error("task");
         }
-        flags["--task"] = task;
+        flags["--task"] = taskPath;
       }
-      const format = resolve_format(response_format);
-      return respond(await invoke_suspec(ctx.env, "check", [path], { flags }), {
+      const format = resolve_format(responseFormat);
+      return respond(await invoke_suspec(ctx.env, "check", paths, {
+        flags,
+        schema: CheckFileSchema,
+        output: "jsonl",
+      }), {
         format,
-        slice: slice_check_file,
+        slice: slice_check_results,
       });
     },
   );
@@ -125,10 +130,14 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
       outputSchema: ENVELOPE_OUTPUT_SHAPE,
       annotations: READ_ONLY,
     },
-    async ({ response_format }) => {
-      const format = resolve_format(response_format);
+    async ({ responseFormat }) => {
+      const format = resolve_format(responseFormat);
       return respond(
-        await invoke_suspec(ctx.env, "check", [], { bare: ["--contract"] }),
+        await invoke_suspec(ctx.env, "check", [], {
+          bare: ["--contract"],
+          schema: ContractSchema,
+          output: "json",
+        }),
         { format, slice: slice_contract },
       );
     },

@@ -1,5 +1,5 @@
 {
-  "version": "0.17.0",
+  "version": "0.18.0",
   "checks": [
     {
       "id": "C001",
@@ -57,11 +57,6 @@
       "severity": "warning"
     },
     {
-      "id": "C014",
-      "name": "do-not-change-touched",
-      "severity": "warning"
-    },
-    {
       "id": "C015",
       "name": "citation-resolves",
       "severity": "warning"
@@ -79,6 +74,26 @@
     {
       "id": "C020",
       "name": "unresolvable-ref",
+      "severity": "hard-error"
+    },
+    {
+      "id": "C021",
+      "name": "intent-present",
+      "severity": "hard-error"
+    },
+    {
+      "id": "C022",
+      "name": "task-shape",
+      "severity": "hard-error"
+    },
+    {
+      "id": "C023",
+      "name": "task-evidence",
+      "severity": "hard-error"
+    },
+    {
+      "id": "C024",
+      "name": "closed-task-resolved",
       "severity": "hard-error"
     }
   ]
