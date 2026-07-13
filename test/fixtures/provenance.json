@@ -3,8 +3,8 @@
   "packageVersion": "1.0.0",
   "packageRoot": "git-root",
   "binary": "bin/suspec.js",
-  "binarySha256": "69e332f889e5ddb8151b0bf06e8880bad39f3bfc0a98d74d2307980b93490c6a",
-  "gitHead": "497e917060bd37f87a8f0571a1dd75f32c67d22f",
+  "binarySha256": "aaa954c9d7c37e0bae43e8be5c1b7207dde818c99fc3313d22a10b3435913b3c",
+  "gitHead": "4ba530e40b810358ee659055db58ac1c9ae5bcb7",
   "worktreeDirty": false,
   "worktreeSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }

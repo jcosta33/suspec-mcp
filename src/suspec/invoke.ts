@@ -1,6 +1,6 @@
 // The ONE subprocess edge. suspec-mcp never imports suspec-cli's internals — it shells out to the
 // `suspec` CLI's `--json` contract with a FIXED argv array (never a shell string, never a client-injected
-// flag). The CLI's whole surface is one verb (`suspec check`, ADR-0143), so the allow-list is exactly
+// flag). The CLI's whole surface is one verb (`suspec check`), so the allow-list is exactly
 // that: `check`, plus the review-companion flags (`--spec`/`--task`, each value a full path already
 // validated by the tool boundary) and the bare `--contract`. `--json` is always appended;
 // suspec-mcp passes no other flag. This keeps suspec-cli at its minimal footprint and couples the two

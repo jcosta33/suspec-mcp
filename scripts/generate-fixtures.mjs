@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Regenerate the contract fixtures from the REAL `suspec` binary (the path-explicit check surface,
-// ADR-0143). The fixtures in test/fixtures/*.json are the drift tripwire's ground truth:
+// Regenerate contract fixtures from the real `suspec` binary. The fixtures in
+// test/fixtures/*.json are the drift tripwire's ground truth:
 // contract.spec.ts parses each through the contract schemas, so a fixture that drifts from reality
 // (or a schema that drifts from the fixture) fails a test instead of suspec-mcp silently producing
 // wrong output. They MUST be generated, not hand-edited — this script is the generator, and

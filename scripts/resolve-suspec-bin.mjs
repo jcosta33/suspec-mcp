@@ -1,4 +1,4 @@
-// Resolve the real `suspec` CLI binary for fixture generation (AC-011).
+// Resolve the real `suspec` CLI binary for fixture generation.
 //
 // A checkout directory need not match its package or remote name. Resolution order:
 //   1. SUSPEC_BIN env var (a path to the binary), then
