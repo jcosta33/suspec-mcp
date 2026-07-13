@@ -341,7 +341,7 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     expect(CheckLineSchema.safeParse({ malformed: true }).success).toBe(false);
   });
 
-  it("rejects an unknown report level while keeping diagnostic severity pass-through", () => {
+  it("rejects unknown report levels and diagnostic severities", () => {
     const report = JSON.parse(
       readFileSync(
         join(here, "fixtures", "check-review-diagnostics.json"),
@@ -353,7 +353,53 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     expect(CheckReportSchema.safeParse(report).success).toBe(false);
 
     report.level = "blocking";
+    expect(CheckReportSchema.safeParse(report).success).toBe(false);
+    report.diagnostics[0].severity = "hard-error";
     expect(CheckReportSchema.safeParse(report).success).toBe(true);
+  });
+
+  it("binds diagnostic codes, severities, and report levels to the supported checks table", () => {
+    const diagnostic = {
+      code: "C021",
+      severity: "warning",
+      message: "intent missing",
+      line: null,
+    };
+    expect(
+      CheckReportSchema.safeParse({
+        level: "warning",
+        path: "spec.md",
+        diagnostics: [diagnostic],
+      }).success,
+    ).toBe(false);
+    expect(
+      CheckReportSchema.safeParse({
+        level: "warning",
+        path: "spec.md",
+        diagnostics: [{ ...diagnostic, code: "C999" }],
+      }).success,
+    ).toBe(false);
+    expect(
+      CheckReportSchema.safeParse({
+        level: "blocking",
+        path: "review.md",
+        diagnostics: [{ ...diagnostic, code: "C013", severity: "hard-error" }],
+      }).success,
+    ).toBe(true);
+    expect(
+      CheckReportSchema.safeParse({
+        level: "clean",
+        path: "spec.md",
+        diagnostics: [{ ...diagnostic, code: "C004" }],
+      }).success,
+    ).toBe(false);
+    expect(
+      CheckReportSchema.safeParse({
+        level: "blocking",
+        path: "spec.md",
+        diagnostics: [],
+      }).success,
+    ).toBe(false);
   });
 });
 

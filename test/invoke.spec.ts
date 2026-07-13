@@ -64,6 +64,21 @@ function fixedOutputBin(
   };
 }
 
+function reportForLevel(level: "clean" | "warning" | "blocking", path: string) {
+  const diagnostics =
+    level === "clean"
+      ? []
+      : [
+          {
+            code: level === "warning" ? "C004" : "C021",
+            severity: level === "warning" ? "warning" : "hard-error",
+            message: "demo",
+            line: null,
+          },
+        ];
+  return { level, path, diagnostics };
+}
+
 // A scratch root carrying the artifacts the stub reads (it sniffs the checked file's
 // frontmatter like the real CLI).
 function scratchEnv(bin: string): { env: SuspecEnv; cleanup: () => void } {
@@ -316,7 +331,7 @@ describe("invoke_suspec — the subprocess edge", () => {
     "rejects a %s-only report stream at exit %i",
     async (level, exitCode) => {
       const child = fixedOutputBin(
-        [{ level, path: "spec.md", diagnostics: [] }],
+        [reportForLevel(level, "spec.md")],
         exitCode,
         "jsonl",
       );
@@ -342,8 +357,8 @@ describe("invoke_suspec — the subprocess edge", () => {
   it("uses the maximum report level to validate a report-only JSONL stream", async () => {
     const child = fixedOutputBin(
       [
-        { level: "clean", path: "clean.md", diagnostics: [] },
-        { level: "warning", path: "warning.md", diagnostics: [] },
+        reportForLevel("clean", "clean.md"),
+        reportForLevel("warning", "warning.md"),
       ],
       1,
       "jsonl",
@@ -365,7 +380,7 @@ describe("invoke_suspec — the subprocess edge", () => {
   it("rejects a mixed report/structured-error JSONL stream", async () => {
     const child = fixedOutputBin(
       [
-        { level: "blocking", path: "spec.md", diagnostics: [] },
+        reportForLevel("blocking", "spec.md"),
         { error: "Usage", message: "mixed stream" },
       ],
       2,
@@ -403,6 +418,41 @@ describe("invoke_suspec — the subprocess edge", () => {
       expect(result.kind).toBe("launch-error");
       if (result.kind === "launch-error") {
         expect(result.message).toMatch(/violates the supported contract/i);
+      }
+    } finally {
+      child.cleanup();
+    }
+  });
+
+  it("rejects a diagnostic whose severity contradicts the supported checks table", async () => {
+    const child = fixedOutputBin(
+      [
+        {
+          level: "warning",
+          path: "spec.md",
+          diagnostics: [
+            {
+              code: "C021",
+              severity: "warning",
+              message: "intent missing",
+              line: null,
+            },
+          ],
+        },
+      ],
+      1,
+      "jsonl",
+    );
+    try {
+      const result = await invoke_suspec(
+        env(child.bin),
+        "check",
+        ["spec.md"],
+        checkOptions(),
+      );
+      expect(result.kind).toBe("launch-error");
+      if (result.kind === "launch-error") {
+        expect(result.message).toMatch(/diagnostic C021 must have severity hard-error/i);
       }
     } finally {
       child.cleanup();

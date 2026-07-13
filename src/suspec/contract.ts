@@ -2,8 +2,8 @@
 // missing or malformed consumed fields fail the invocation instead of leaking partial data to clients.
 //
 // ENUM POLICY: a field is modelled as a CLOSED `z.enum` only when the adapter branches on its exact
-// value-set. Report `level` drives exit-code validation, so it is closed; diagnostic `severity`
-// remains pass-through because the adapter only relays it.
+// value-set. Report `level`, diagnostic code/severity, and their relationship drive exit-code
+// validation, so all are checked against the exact supported table.
 
 import { z } from "zod";
 
@@ -38,21 +38,62 @@ export const SUPPORTED_CHECKS = [
 // --- suspec check <artifact> --json → the per-file check report ------------------------------------
 // One diagnostic from the checks contract: `code` is a contract C-code, `severity`/`level` are the
 // CLI's own recorded facts (pass-through), `line` is present but null when the check has no anchor.
+const SUPPORTED_CHECK_BY_ID = new Map<string, (typeof SUPPORTED_CHECKS)[number]>(
+  SUPPORTED_CHECKS.map((check) => [check.id, check]),
+);
+
 const CheckDiagnostic = z
   .object({
     code: z.string(),
-    severity: z.string(),
+    severity: z.enum(["hard-error", "warning"]),
     message: z.string(),
     line: z.number().nullable(),
   })
-  .passthrough();
+  .passthrough()
+  .superRefine((diagnostic, ctx) => {
+    const expected = SUPPORTED_CHECK_BY_ID.get(diagnostic.code);
+    if (expected === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: `unknown diagnostic code ${diagnostic.code}`,
+        path: ["code"],
+      });
+      return;
+    }
+    const severityAllowed =
+      diagnostic.severity === expected.severity ||
+      (diagnostic.code === "C013" && diagnostic.severity === "hard-error");
+    if (!severityAllowed) {
+      ctx.addIssue({
+        code: "custom",
+        message: `diagnostic ${diagnostic.code} must have severity ${expected.severity}`,
+        path: ["severity"],
+      });
+    }
+  });
 export const CheckReportSchema = z
   .object({
     level: z.enum(["clean", "warning", "blocking"]),
     path: z.string(),
     diagnostics: z.array(CheckDiagnostic),
   })
-  .passthrough();
+  .passthrough()
+  .superRefine((report, ctx) => {
+    const expectedLevel = report.diagnostics.some(
+      (diagnostic) => diagnostic.severity === "hard-error",
+    )
+      ? "blocking"
+      : report.diagnostics.length > 0
+        ? "warning"
+        : "clean";
+    if (report.level !== expectedLevel) {
+      ctx.addIssue({
+        code: "custom",
+        message: `report level must be ${expectedLevel} for its diagnostics`,
+        path: ["level"],
+      });
+    }
+  });
 
 // An artifact whose frontmatter `type:` has no check face: the CLI says so
 // cleanly (`checked: false`) instead of running the wrong checks — nothing to validate is not a defect.
