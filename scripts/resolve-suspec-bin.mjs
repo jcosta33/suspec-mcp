@@ -4,8 +4,8 @@
 //   1. SUSPEC_BIN env var (a path to the binary), then
 //   2. every sibling directory whose package.json name is "suspec-cli" and that ships bin/suspec.js
 //      (folder name irrelevant), preferring `../suspec-cli` when both exist.
-// Returns the absolute path, or null when nothing resolves — callers decide whether that is an error
-// (the generator) or a loud skip (the drift-tripwire test).
+// Returns the absolute path, or null when no optional sibling resolves. An explicit path is a
+// promise from an integration environment, so a bad one throws instead of disabling the guard.
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -93,7 +93,7 @@ export function inspectSuspecBin(value) {
 
 export function resolveSuspecBin(repoRoot) {
   const fromEnv = process.env.SUSPEC_BIN;
-  if (fromEnv && existsSync(fromEnv)) {
+  if (fromEnv) {
     const resolved = resolve(fromEnv);
     inspectSuspecBin(resolved);
     return resolved;

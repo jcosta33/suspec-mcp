@@ -292,6 +292,14 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
         diagnostics: [{ ...diagnostic, code: "C021" }],
       }).success,
     ).toBe(false);
+    expect(
+      CheckReportSchema.safeParse({
+        path: "spec.md",
+        level: "blocking",
+        diagnostics: [diagnostic],
+        type: "spec",
+      }).success,
+    ).toBe(false);
   });
 
   it("check --contract --json → Contract (version + the core checks)", () => {

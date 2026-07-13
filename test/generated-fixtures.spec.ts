@@ -63,6 +63,17 @@ const report = (level: "clean" | "warning" | "blocking", path: string) => ({
 });
 
 describe("fixture capture exit assertions", () => {
+  it("fails closed when an explicit CLI path does not resolve", () => {
+    const original = process.env.SUSPEC_BIN;
+    try {
+      process.env.SUSPEC_BIN = join(tmpdir(), "missing-suspec-bin");
+      expect(() => resolveSuspecBin(repoRoot)).toThrow();
+    } finally {
+      if (original === undefined) delete process.env.SUSPEC_BIN;
+      else process.env.SUSPEC_BIN = original;
+    }
+  });
+
   it.each([
     ["json", "clean", 0, JSON.stringify(report("clean", "clean.md"))],
     ["json", "warning", 1, JSON.stringify(report("warning", "warning.md"))],

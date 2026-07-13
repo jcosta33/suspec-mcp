@@ -91,6 +91,13 @@ export const CheckReportSchema = z
         path: ["checked"],
       });
     }
+    if (report.diagnostics.some((diagnostic) => diagnostic.code === "C002")) {
+      ctx.addIssue({
+        code: "custom",
+        message: "C002 belongs only to the file-set report",
+        path: ["diagnostics"],
+      });
+    }
     const expectedLevel = report.diagnostics.some(
       (diagnostic) => diagnostic.severity === "hard-error",
     )
