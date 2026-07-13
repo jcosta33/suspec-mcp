@@ -1,7 +1,7 @@
 // The concise projections for the tools. Each `slice_*` maps the CLI's VERBATIM `--json` payload to a
 // smaller, targeted view returned in concise `responseFormat` — the relevant slice an agent acts on,
-// vs the detailed (verbatim) payload. The rule: keep identifiers and triage-bearing fields, including
-// a diagnostic's available line anchor; drop path echoes and human-readable contract names.
+// vs the detailed (verbatim) payload. The rule: keep report identity and triage-bearing fields,
+// including paths and available line anchors; drop human-readable contract names.
 // Each slice is total + defensive: it reads only fields it knows and falls back to the verbatim data
 // if the shape is unrecognised, so concise never throws on a drifted payload (the contract tripwire
 // owns drift-detection; slicing must not become a second failure mode).
@@ -20,8 +20,8 @@ function as_array(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-// suspec check <artifact> → keep the outcome + actionable diagnostics
-// (code/severity/message and an available line); drop the path echo.
+// suspec check <artifact> → keep report identity, outcome, and actionable diagnostics
+// (code/severity/message and an available line).
 // An artifact whose type has no check face keeps its `{level, type, checked:false}` notice whole —
 // dropping `checked` would misread "nothing was validated" as "validated clean".
 function slice_check_file(data: unknown): unknown {
@@ -39,10 +39,16 @@ function slice_check_file(data: unknown): unknown {
     return data;
   }
   if (check.checked === false) {
-    return { level: check.level, type: check.type, checked: false };
+    return {
+      level: check.level,
+      path: check.path,
+      type: check.type,
+      checked: false,
+    };
   }
   return {
     level: check.level,
+    path: check.path,
     diagnostics: as_array(check.diagnostics).map((d) => {
       const diag = as_obj(d) ?? {};
       return {

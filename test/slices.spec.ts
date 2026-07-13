@@ -2,14 +2,14 @@ import { describe, it, expect } from "vitest";
 
 import { slice_check_results, slice_contract } from "../src/slices.ts";
 
-// The concise projections are pure shape reducers: they keep the identifiers + triage fields and drop
-// the echoes (path and human-readable names). These tests assert (1) the happy-path slice
+// The concise projections are pure shape reducers: they keep report identity + triage fields and
+// drop human-readable names. These tests assert (1) the happy-path slice
 // drops the right fields and keeps the right ones, AND (2) every defensive fallback arm — a
 // malformed/non-object payload returns the verbatim data rather than throwing (concise must never
 // become a second failure mode; the contract tripwire owns drift-detection).
 
 describe("slice_check_results", () => {
-  it("keeps level + actionable diagnostics including line anchors; drops the path echo", () => {
+  it("keeps path, level, and actionable diagnostics including line anchors", () => {
     const out = slice_check_results([
       {
         level: "warning",
@@ -18,8 +18,9 @@ describe("slice_check_results", () => {
           { code: "C004", severity: "warning", message: "demo", line: 1 },
         ],
       },
-    ]) as { level: string; diagnostics: { code: string; line?: number }[] }[];
+    ]) as { level: string; path: string; diagnostics: { code: string; line?: number }[] }[];
     expect(out[0].level).toBe("warning");
+    expect(out[0].path).toBe("specs/a/spec.md");
     expect(out[0].diagnostics[0]).toEqual({
       code: "C004",
       severity: "warning",
@@ -27,7 +28,6 @@ describe("slice_check_results", () => {
       line: 1,
     });
     expect(out[0].diagnostics[0].line).toBe(1);
-    expect("path" in out[0]).toBe(false);
   });
 
   it("keeps the unchecked notice whole (checked:false must not read as validated-clean)", () => {
@@ -35,7 +35,16 @@ describe("slice_check_results", () => {
       { level: "clean", path: "audit.md", type: "audit", checked: false },
     ]);
     expect(out).toEqual([
-      { level: "clean", type: "audit", checked: false },
+      { level: "clean", path: "audit.md", type: "audit", checked: false },
+    ]);
+  });
+
+  it("keeps the cross-file report marker", () => {
+    const out = slice_check_results([
+      { level: "blocking", path: "(file set)", diagnostics: [] },
+    ]);
+    expect(out).toEqual([
+      { level: "blocking", path: "(file set)", diagnostics: [] },
     ]);
   });
 
@@ -49,7 +58,7 @@ describe("slice_check_results", () => {
 
   it("defaults an absent diagnostics list to [] (the as_array fallback) instead of throwing", () => {
     expect(slice_check_results([{ level: "warning" }])).toEqual([
-      { level: "warning", diagnostics: [] },
+      { level: "warning", path: undefined, diagnostics: [] },
     ]);
   });
 

@@ -90,6 +90,16 @@ export const CheckReportSchema = z
         path: ["checked"],
       });
     }
+    if (
+      typeof report.type === "string" &&
+      ["inventory", "audit", "research", "inspection"].includes(report.type)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: `recognized unchecked type ${report.type} must use checked:false`,
+        path: ["type"],
+      });
+    }
     const expectedLevel = report.diagnostics.some(
       (diagnostic) => diagnostic.severity === "hard-error",
     )

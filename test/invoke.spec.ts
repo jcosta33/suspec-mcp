@@ -506,6 +506,27 @@ describe("invoke_suspec — the subprocess edge", () => {
     }
   });
 
+  it("rejects a checked-clean report for a recognized unchecked type", async () => {
+    const child = fixedOutputBin(
+      { ...reportForLevel("clean", "audit.md"), type: "audit" },
+      0,
+    );
+    try {
+      const result = await invoke_suspec(
+        env(child.bin),
+        "check",
+        ["audit.md"],
+        checkOptions(),
+      );
+      expect(result.kind).toBe("launch-error");
+      if (result.kind === "launch-error") {
+        expect(result.message).toMatch(/must use checked:false/i);
+      }
+    } finally {
+      child.cleanup();
+    }
+  });
+
   it("rejects a final file-set report whose diagnostics are not exclusively C002", async () => {
     const child = fixedOutputBin(
       [

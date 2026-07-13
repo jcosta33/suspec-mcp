@@ -198,6 +198,14 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
       }).success,
     ).toBe(false);
     expect(
+      CheckReportSchema.safeParse({
+        level: "clean",
+        path: "audit.md",
+        type: "audit",
+        diagnostics: [],
+      }).success,
+    ).toBe(false);
+    expect(
       UncheckedArtifactSchema.safeParse({
         level: "clean",
         path: "audit.md",

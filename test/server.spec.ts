@@ -285,7 +285,12 @@ describe("suspec-mcp server", () => {
         arguments: { paths: [artifactPath("audits/audit.md")] },
       })) as { structuredContent: { data: unknown } };
       expect(result.structuredContent.data).toEqual([
-        { level: "clean", type: "audit", checked: false },
+        {
+          level: "clean",
+          path: artifactPath("audits/audit.md"),
+          type: "audit",
+          checked: false,
+        },
       ]);
     } finally {
       await close();
@@ -396,6 +401,7 @@ describe("suspec-mcp server", () => {
       expect(result.structuredContent.data).toEqual([
         {
           level: "warning",
+          path: artifactPath("specs/a.md"),
           diagnostics: [
             { code: "C004", severity: "warning", message: "demo", line: 1 },
           ],

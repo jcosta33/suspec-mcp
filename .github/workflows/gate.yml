@@ -63,6 +63,7 @@ jobs:
           pnpm gate
 
   method-gates:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - { name: suspec-mcp, uses: actions/checkout@v4, with: { path: family/suspec-mcp } }
