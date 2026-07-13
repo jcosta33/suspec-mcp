@@ -109,26 +109,23 @@ describe("suspec-mcp resources", () => {
     }
   });
 
-  it("renders a structured CLI error as the resource body (body_of structured-error branch)", async () => {
+  it("throws when the checks resource invocation returns a structured CLI error", async () => {
     const { client, close } = await connect(errorBin);
     try {
-      const text = firstText(
-        await client.readResource({ uri: "suspec://checks" }),
-      );
-      expect(text).toContain("simulated structured error");
+      await expect(
+        client.readResource({ uri: "suspec://checks" }),
+      ).rejects.toThrow(/simulated structured error/);
     } finally {
       await close();
     }
   });
 
-  it("renders an adapter launch-error as the resource body when the CLI cannot run (body_of launch-error branch)", async () => {
+  it("throws when the checks resource invocation has a launch failure", async () => {
     const { client, close } = await connect(nonjsonBin);
     try {
-      const text = firstText(
-        await client.readResource({ uri: "suspec://checks" }),
-      );
-      expect(text).toMatch(/"error": ?"adapter"/);
-      expect(text).toMatch(/no parseable JSON/);
+      await expect(
+        client.readResource({ uri: "suspec://checks" }),
+      ).rejects.toThrow(/no parseable JSON/);
     } finally {
       await close();
     }

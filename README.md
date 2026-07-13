@@ -47,6 +47,9 @@ The checks contract the CLI holds artifacts to (`suspec check --contract`): the 
 version plus every core check's id, name, and severity. Also served as the fixed resource
 `suspec://checks`.
 
+The startup compatibility probe and every resource read require the exact `0.18.0` contract at exit
+0. A failed resource invocation throws instead of serving an error document as resource content.
+
 ## The envelope
 
 Every tool result carries the same structure:
@@ -61,6 +64,9 @@ Every tool result carries the same structure:
   `(file set)` report carries cross-file findings.
 - `note` — optional adapter context when needed.
 - `responseFormat` — `concise` or `detailed`.
+
+Only child exits 0, 1, and 2 belong to the CLI contract. Any other exit is an adapter launch failure,
+even when stdout resembles valid JSON; a structured CLI error document is accepted only at exit 2.
 
 ## Run it
 

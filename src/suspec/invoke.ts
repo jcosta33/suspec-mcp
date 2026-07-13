@@ -58,6 +58,7 @@ type ExecOutcome = Readonly<{
 
 const TIMEOUT_MS = 30_000;
 const MAX_BUFFER = 64 * 1024 * 1024;
+const SUPPORTED_EXIT_CODES = new Set([0, 1, 2]);
 
 function quote_arg(value: string): string {
   if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(value)) {
@@ -165,6 +166,14 @@ export function invoke_suspec(
       }
       const exitCode = typeof errorCode === "number" ? errorCode : 0;
       const invocation: SuspecInvocation = { command, exitCode };
+      if (!SUPPORTED_EXIT_CODES.has(exitCode)) {
+        const stderr = (result.stderr ?? "").trim();
+        return {
+          kind: "launch-error",
+          invocation,
+          message: `\`${command}\` returned unsupported exit code ${exitCode}; expected 0, 1, or 2${stderr ? `: ${stderr}` : ""}`,
+        };
+      }
       const stdout = (result.stdout ?? "").trim();
 
       let parsed: unknown;
@@ -204,6 +213,13 @@ export function invoke_suspec(
       const hasStructuredError = validated.some(
         (document) => SuspecErrorSchema.safeParse(document).success,
       );
+      if (hasStructuredError && exitCode !== 2) {
+        return {
+          kind: "launch-error",
+          invocation,
+          message: `\`${command}\` emitted a structured error at exit ${exitCode}; structured errors require exit 2`,
+        };
+      }
       return hasStructuredError
         ? { kind: "structured-error", invocation, data }
         : { kind: "ok", invocation, data };

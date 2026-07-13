@@ -4,22 +4,12 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { invoke_suspec, type SuspecResult } from "./suspec/invoke.ts";
+import { invoke_suspec } from "./suspec/invoke.ts";
 import { ContractSchema } from "./suspec/contract.ts";
+import { require_supported_contract_result } from "./suspec/compatibility.ts";
 import type { Ctx } from "./tools.ts";
 
 const JSON_MIME = "application/json";
-
-// Render a SuspecResult's payload as the resource body (the CLI data, or the structured error).
-function body_of(result: SuspecResult): string {
-  if (result.kind === "ok") {
-    return JSON.stringify(result.data, null, 2);
-  }
-  if (result.kind === "structured-error") {
-    return JSON.stringify(result.data, null, 2);
-  }
-  return JSON.stringify({ error: "adapter", message: result.message }, null, 2);
-}
 
 export function register_resources(server: McpServer, ctx: Ctx): void {
   server.registerResource(
@@ -31,20 +21,22 @@ export function register_resources(server: McpServer, ctx: Ctx): void {
         "The checks contract — the contract version + every core check's id, name, and severity.",
       mimeType: JSON_MIME,
     },
-    async (uri) => ({
-      contents: [
-        {
-          uri: uri.href,
-          mimeType: JSON_MIME,
-          text: body_of(
-            await invoke_suspec(ctx.env, "check", [], {
-              bare: ["--contract"],
-              schema: ContractSchema,
-              output: "json",
-            }),
-          ),
-        },
-      ],
-    }),
+    async (uri) => {
+      const result = await invoke_suspec(ctx.env, "check", [], {
+        bare: ["--contract"],
+        schema: ContractSchema,
+        output: "json",
+      });
+      const data = require_supported_contract_result(result);
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: JSON_MIME,
+            text: JSON.stringify(data, null, 2),
+          },
+        ],
+      };
+    },
   );
 }

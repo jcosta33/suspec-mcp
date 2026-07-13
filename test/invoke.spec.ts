@@ -11,7 +11,13 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { invoke_suspec, type SuspecEnv } from "../src/suspec/invoke.ts";
-import { CheckFileSchema, ContractSchema } from "../src/suspec/contract.ts";
+import { require_supported_contract } from "../src/suspec/compatibility.ts";
+import {
+  CheckFileSchema,
+  ContractSchema,
+  SUPPORTED_CHECKS,
+  SUPPORTED_CONTRACT_VERSION,
+} from "../src/suspec/contract.ts";
 
 // Direct unit tests for THE subprocess edge — the security/robustness boundary. These cover the
 // fact branches (ok / structured-error) plus every failure path (bad verb, bad flag, missing binary,
@@ -36,6 +42,23 @@ const contractOptions: Parameters<typeof invoke_suspec>[3] = {
   schema: ContractSchema,
   output: "json",
 };
+
+function fixedOutputBin(data: unknown, exitCode: number): {
+  bin: string;
+  cleanup: () => void;
+} {
+  const dir = mkdtempSync(join(tmpdir(), "suspec-mcp-fixed-output-"));
+  const bin = join(dir, "suspec.mjs");
+  writeFileSync(
+    bin,
+    `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(JSON.stringify(data))});\nprocess.exit(${String(exitCode)});\n`,
+  );
+  chmodSync(bin, 0o755);
+  return {
+    bin,
+    cleanup: () => rmSync(dir, { recursive: true, force: true }),
+  };
+}
 
 // A scratch root carrying the artifacts the stub reads (it sniffs the checked file's
 // frontmatter like the real CLI).
@@ -255,6 +278,55 @@ describe("invoke_suspec — the subprocess edge", () => {
     }
   });
 
+  it.each([0, 1])(
+    'returns kind:"launch-error" for a structured error document at exit %i',
+    async (exitCode) => {
+      const child = fixedOutputBin(
+        { error: "Usage", message: "valid-looking structured error" },
+        exitCode,
+      );
+      try {
+        const result = await invoke_suspec(
+          env(child.bin),
+          "check",
+          ["spec.md"],
+          checkOptions(),
+        );
+        expect(result.kind).toBe("launch-error");
+        if (result.kind === "launch-error") {
+          expect(result.message).toMatch(/structured error.*exit 2/i);
+        }
+      } finally {
+        child.cleanup();
+      }
+    },
+  );
+
+  it.each([3, 126, 127])(
+    'returns kind:"launch-error" for unsupported exit %i even with valid-looking JSON',
+    async (exitCode) => {
+      const child = fixedOutputBin(
+        { level: "clean", path: "spec.md", diagnostics: [] },
+        exitCode,
+      );
+      try {
+        const result = await invoke_suspec(
+          env(child.bin),
+          "check",
+          ["spec.md"],
+          checkOptions(),
+        );
+        expect(result.kind).toBe("launch-error");
+        expect(result.invocation.exitCode).toBe(exitCode);
+        if (result.kind === "launch-error") {
+          expect(result.message).toMatch(/unsupported exit code/);
+        }
+      } finally {
+        child.cleanup();
+      }
+    },
+  );
+
   it('returns kind:"launch-error" when the binary cannot be launched', async () => {
     const r = await invoke_suspec(
       env("/nonexistent/suspec-does-not-exist"),
@@ -268,7 +340,7 @@ describe("invoke_suspec — the subprocess edge", () => {
     }
   });
 
-  it('returns kind:"launch-error" with the stderr tail when output is non-JSON', async () => {
+  it('returns kind:"launch-error" with the stderr tail for an unsupported child exit', async () => {
     const r = await invoke_suspec(
       env(nonjson),
       "check",
@@ -277,7 +349,7 @@ describe("invoke_suspec — the subprocess edge", () => {
     );
     expect(r.kind).toBe("launch-error");
     if (r.kind === "launch-error") {
-      expect(r.message).toMatch(/no parseable JSON/);
+      expect(r.message).toMatch(/unsupported exit code 3/);
       expect(r.message).toMatch(/boom/); // the stderr tail is surfaced
     }
   });
@@ -321,6 +393,22 @@ describe("invoke_suspec — the subprocess edge", () => {
     expect(result.kind).toBe("launch-error");
     if (result.kind === "launch-error") {
       expect(result.message).toMatch(/violates the supported contract/);
+    }
+  });
+});
+
+describe("checks-contract compatibility probe", () => {
+  it.each([1, 2])("rejects a valid contract payload at exit %i", async (exitCode) => {
+    const child = fixedOutputBin(
+      { version: SUPPORTED_CONTRACT_VERSION, checks: SUPPORTED_CHECKS },
+      exitCode,
+    );
+    try {
+      await expect(require_supported_contract(env(child.bin))).rejects.toThrow(
+        /checks contract 0\.18\.0.*exit 0/i,
+      );
+    } finally {
+      child.cleanup();
     }
   });
 });
