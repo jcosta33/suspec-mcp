@@ -83,6 +83,13 @@ export const CheckReportSchema = z
   })
   .passthrough()
   .superRefine((report, ctx) => {
+    if (Object.hasOwn(report, "checked")) {
+      ctx.addIssue({
+        code: "custom",
+        message: "checked reports must not carry `checked`",
+        path: ["checked"],
+      });
+    }
     const expectedLevel = report.diagnostics.some(
       (diagnostic) => diagnostic.severity === "hard-error",
     )
@@ -108,7 +115,16 @@ export const UncheckedArtifactSchema = z
     type: z.enum(["inventory", "audit", "research", "inspection"]),
     checked: z.literal(false),
   })
-  .passthrough();
+  .passthrough()
+  .superRefine((notice, ctx) => {
+    if (Object.hasOwn(notice, "diagnostics")) {
+      ctx.addIssue({
+        code: "custom",
+        message: "unchecked notices must not carry `diagnostics`",
+        path: ["diagnostics"],
+      });
+    }
+  });
 
 // What `suspec check <artifact> --json` can emit on a success exit: a check report (spec, task,
 // review, change-plan) or the unchecked notice.

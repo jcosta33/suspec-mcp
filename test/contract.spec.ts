@@ -179,6 +179,35 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     }
   });
 
+  it("keeps checked reports and unchecked notices disjoint", () => {
+    expect(
+      CheckReportSchema.safeParse({
+        level: "blocking",
+        path: "audit.md",
+        diagnostics: [
+          {
+            code: "C021",
+            name: "intent-present",
+            severity: "hard-error",
+            message: "spec has no non-empty Intent section",
+            line: null,
+          },
+        ],
+        type: "audit",
+        checked: false,
+      }).success,
+    ).toBe(false);
+    expect(
+      UncheckedArtifactSchema.safeParse({
+        level: "clean",
+        path: "audit.md",
+        type: "audit",
+        checked: false,
+        diagnostics: [],
+      }).success,
+    ).toBe(false);
+  });
+
   it("every check capture parses under the CheckFile union", () => {
     for (const name of [
       "check-spec.json",
