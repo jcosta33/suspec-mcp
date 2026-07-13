@@ -1,10 +1,12 @@
 [
   {
+    "type": "spec",
     "level": "clean",
     "path": "spec-demo.md",
     "diagnostics": []
   },
   {
+    "type": "spec",
     "level": "clean",
     "path": "spec-duplicate.md",
     "diagnostics": []

@@ -9,6 +9,7 @@ if (process.argv.includes("--contract")) {
 
 process.stdout.write(
   `${JSON.stringify({
+    type: "spec",
     level: "clean",
     path: "/first.md",
     diagnostics: [],

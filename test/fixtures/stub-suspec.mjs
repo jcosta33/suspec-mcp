@@ -229,6 +229,7 @@ if (type === "review") {
           ? "a packet with no id"
           : `the packet for \`${taskId}\``;
       emit({
+        type: "review",
         path: file,
         level: "blocking",
         diagnostics: [
@@ -257,7 +258,7 @@ if (type === "review") {
       );
     }
   }
-  emit({ path: file, level: "clean", diagnostics: [] });
+  emit({ type: "review", path: file, level: "clean", diagnostics: [] });
   process.exit(0);
 }
 
@@ -273,6 +274,7 @@ for (const artifact of artifacts) {
     continue;
   }
   emit({
+    type: artifact.type,
     level: "warning",
     path: artifact.file,
     diagnostics: [

@@ -1,5 +1,5 @@
-# The full verification gate: typecheck · lint · coverage · build — plus the fixture drift tripwire,
-# which requires the real sibling suspec-cli checkout below.
+# Pushes and pull requests run the repository-local gate. A manual integration snapshot adds the
+# real CLI sibling so fixture drift can execute.
 name: gate
 
 on:
@@ -29,7 +29,8 @@ permissions:
   contents: read
 
 jobs:
-  gate:
+  local-gate:
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,25 +38,40 @@ jobs:
           path: repo
           persist-credentials: false
 
-      # The real CLI: the fixture tripwire resolves any sibling whose package name is suspec-cli.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Gate
+        working-directory: repo
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm gate
+
+  integration-gate:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: repo
+          persist-credentials: false
       - uses: actions/checkout@v4
         with:
           repository: jcosta33/suspec-cli
           ref: "${{ inputs.cli_ref || 'main' }}"
           path: suspec-cli
           persist-credentials: false
-
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-
-      - name: Install the sibling CLI's deps (the tripwire runs it)
+      - name: Install the sibling CLI's dependencies
         working-directory: suspec-cli
         run: |
           corepack enable
           pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Gate
+      - name: Integration gate
         working-directory: repo
         run: |
           corepack enable

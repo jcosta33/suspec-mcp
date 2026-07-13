@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 
 import {
   CheckReportSchema,
+  FileSetReportSchema,
+  CheckOutputSchema,
   UncheckedArtifactSchema,
   CheckFileSchema,
   CheckLineSchema,
@@ -182,6 +184,22 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
   it("keeps checked reports and unchecked notices disjoint", () => {
     expect(
       CheckReportSchema.safeParse({
+        level: "clean",
+        path: "spec.md",
+        diagnostics: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      CheckReportSchema.safeParse({
+        type: "spec",
+        level: "clean",
+        path: "spec.md",
+        diagnostics: [],
+        checked: false,
+      }).success,
+    ).toBe(false);
+    expect(
+      CheckReportSchema.safeParse({
         level: "blocking",
         path: "audit.md",
         diagnostics: [
@@ -239,9 +257,41 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
 
     const duplicate = fixture("check-duplicate-id.json") as unknown[];
     expect(duplicate).toHaveLength(3);
-    const setReport = CheckReportSchema.parse(duplicate[2]);
+    const setReport = FileSetReportSchema.parse(duplicate[2]);
     expect(setReport.path).toBe("(file set)");
     expect(setReport.diagnostics.map((item) => item.code)).toContain("C002");
+  });
+
+  it("keeps file-set reports distinct from artifact reports", () => {
+    const diagnostic = {
+      code: "C002",
+      severity: "hard-error",
+      message: "duplicate id",
+      line: null,
+    } as const;
+    expect(
+      FileSetReportSchema.safeParse({
+        path: "(file set)",
+        level: "blocking",
+        diagnostics: [diagnostic],
+        type: "spec",
+      }).success,
+    ).toBe(false);
+    expect(
+      CheckOutputSchema.safeParse({
+        path: "(file set)",
+        level: "blocking",
+        diagnostics: [diagnostic],
+        type: "spec",
+      }).success,
+    ).toBe(false);
+    expect(
+      FileSetReportSchema.safeParse({
+        path: "(file set)",
+        level: "blocking",
+        diagnostics: [{ ...diagnostic, code: "C021" }],
+      }).success,
+    ).toBe(false);
   });
 
   it("check --contract --json → Contract (version + the core checks)", () => {
@@ -432,6 +482,7 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     };
     expect(
       CheckReportSchema.safeParse({
+        type: "spec",
         level: "warning",
         path: "spec.md",
         diagnostics: [diagnostic],
@@ -439,6 +490,7 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     ).toBe(false);
     expect(
       CheckReportSchema.safeParse({
+        type: "spec",
         level: "warning",
         path: "spec.md",
         diagnostics: [{ ...diagnostic, code: "C999" }],
@@ -446,6 +498,7 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     ).toBe(false);
     expect(
       CheckReportSchema.safeParse({
+        type: "review",
         level: "blocking",
         path: "review.md",
         diagnostics: [
@@ -461,6 +514,7 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     ).toBe(true);
     expect(
       CheckReportSchema.safeParse({
+        type: "review",
         level: "blocking",
         path: "review.md",
         diagnostics: [
@@ -476,6 +530,7 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     ).toBe(false);
     expect(
       CheckReportSchema.safeParse({
+        type: "spec",
         level: "clean",
         path: "spec.md",
         diagnostics: [{ ...diagnostic, code: "C004" }],
@@ -483,6 +538,7 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     ).toBe(false);
     expect(
       CheckReportSchema.safeParse({
+        type: "spec",
         level: "blocking",
         path: "spec.md",
         diagnostics: [],

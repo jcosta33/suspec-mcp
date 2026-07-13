@@ -12,7 +12,7 @@ import { resolve } from "node:path";
 import { z } from "zod";
 
 import {
-  CheckFileSchema,
+  CheckOutputSchema,
   ContractSchema,
   SuspecErrorSchema,
 } from "./contract.ts";
@@ -220,7 +220,7 @@ export function invoke_suspec(
         };
       }
       const payloadSchema =
-        opts.expected === "contract" ? ContractSchema : CheckFileSchema;
+        opts.expected === "contract" ? ContractSchema : CheckOutputSchema;
       const documents = opts.expected === "reports" ? (parsed as unknown[]) : [parsed];
       const validated: unknown[] = [];
       for (const document of documents) {
@@ -295,6 +295,8 @@ export function invoke_suspec(
         expectedPrimaryPaths.length > 1 &&
         reports.length === expectedPrimaryPaths.length + 1 &&
         setReport?.path === "(file set)" &&
+        !Object.hasOwn(setReport, "type") &&
+        !Object.hasOwn(setReport, "checked") &&
         setReport.level === "blocking" &&
         Array.isArray(setReport.diagnostics) &&
         setReport.diagnostics.length > 0 &&

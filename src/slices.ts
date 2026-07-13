@@ -49,6 +49,7 @@ function slice_check_file(data: unknown): unknown {
   return {
     level: check.level,
     path: check.path,
+    ...(Object.hasOwn(check, "type") ? { type: check.type } : {}),
     diagnostics: as_array(check.diagnostics).map((d) => {
       const diag = as_obj(d) ?? {};
       return {

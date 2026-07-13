@@ -12,13 +12,15 @@ describe("slice_check_results", () => {
   it("keeps path, level, and actionable diagnostics including line anchors", () => {
     const out = slice_check_results([
       {
+        type: "spec",
         level: "warning",
         path: "specs/a/spec.md",
         diagnostics: [
           { code: "C004", severity: "warning", message: "demo", line: 1 },
         ],
       },
-    ]) as { level: string; path: string; diagnostics: { code: string; line?: number }[] }[];
+    ]) as { type: string; level: string; path: string; diagnostics: { code: string; line?: number }[] }[];
+    expect(out[0].type).toBe("spec");
     expect(out[0].level).toBe("warning");
     expect(out[0].path).toBe("specs/a/spec.md");
     expect(out[0].diagnostics[0]).toEqual({
@@ -50,6 +52,7 @@ describe("slice_check_results", () => {
 
   it("falls back on a non-object payload and tolerates a malformed diagnostic", () => {
     expect(slice_check_results(42)).toBe(42);
+    expect(slice_check_results([42])).toEqual([42]);
     const out = slice_check_results([{ diagnostics: [null] }]) as {
       diagnostics: unknown[];
     }[];

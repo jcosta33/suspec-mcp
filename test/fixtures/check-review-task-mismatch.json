@@ -1,4 +1,5 @@
 {
+  "type": "review",
   "path": "review-task-mismatch.md",
   "level": "blocking",
   "diagnostics": [

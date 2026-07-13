@@ -20,11 +20,11 @@ import { invoke_suspec } from "../src/suspec/invoke.ts";
 // against the REAL `suspec` binary into a temp dir, then asserts the checked-in fixtures still match
 // the freshly generated ones exactly. It is the wire that trips when a fixture is hand-edited or goes
 // stale against the binary — the fixture's job is to be the binary's output, so a drift between
-// "what's checked in" and "what the binary now emits" must fail here, loudly.
+// "what's checked in" and "what the binary now emits" must fail in an integration snapshot.
 //
 // The generator passes every artifact path RELATIVE with cwd=scratch, so the captured output carries
-// no machine-specific value and the compare needs no normalization. The real binary is a required
-// test dependency: skipping when it is absent would let contract drift pass undetected.
+// no machine-specific value and the compare needs no normalization. Repository-local runs skip the
+// two real-binary tests visibly; the dispatch-only integration gate supplies the CLI and must run them.
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..");
@@ -146,12 +146,8 @@ describe("fixture capture exit assertions", () => {
 });
 
 describe("the contract fixtures stay generated from the real binary", () => {
-  it("regenerating into a temp dir reproduces the checked-in fixtures", () => {
-    expect(
-      suspecBin,
-      "fixture drift requires SUSPEC_BIN or a sibling checkout whose package name is suspec-cli",
-    ).not.toBeNull();
-    if (suspecBin === null) return;
+  it.skipIf(suspecBin === null)("regenerating into a temp dir reproduces the checked-in fixtures", () => {
+    if (suspecBin === null) throw new Error("integration gate did not supply suspec-cli");
 
     const tmp = mkdtempSync(join(tmpdir(), "suspec-mcp-genfix-"));
     try {
@@ -182,9 +178,8 @@ describe("the contract fixtures stay generated from the real binary", () => {
     // per-test timeout is the right fix.
   }, 60_000);
 
-  it("accepts duplicate and symlink-alias paths deduplicated by the real CLI", async () => {
-    expect(suspecBin).not.toBeNull();
-    if (suspecBin === null) return;
+  it.skipIf(suspecBin === null)("accepts duplicate and symlink-alias paths deduplicated by the real CLI", async () => {
+    if (suspecBin === null) throw new Error("integration gate did not supply suspec-cli");
 
     const tmp = mkdtempSync(join(tmpdir(), "suspec-mcp-alias-"));
     try {

@@ -5,6 +5,6 @@ const path = process.argv[3];
 
 setTimeout(() => {
   process.stdout.write(
-    JSON.stringify({ level: "clean", path, diagnostics: [] }),
+    JSON.stringify({ type: "spec", level: "clean", path, diagnostics: [] }),
   );
 }, delay);

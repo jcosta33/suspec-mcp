@@ -1,4 +1,5 @@
 {
+  "type": "review",
   "path": "review-bad.md",
   "level": "blocking",
   "diagnostics": [

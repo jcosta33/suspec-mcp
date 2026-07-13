@@ -30,6 +30,8 @@ The CLI refuses a missing or unreferenced companion with a blocking error rather
 silently checking less; that refusal surfaces as `ok: false` with the CLI's own message.
 Recognized unchecked types (`inventory`, `audit`, `research`, and `inspection`) come back as
 `checked: false`; missing and unknown types are rejected by the CLI.
+Each per-artifact result repeats its recognized `type`; only the optional final `(file set)` C002
+report has no artifact type.
 
 Companions are valid only when `paths` contains exactly one review target. A CLI refusal remains
 structured data with `ok: false`.

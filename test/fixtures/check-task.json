@@ -1,4 +1,5 @@
 {
+  "type": "task",
   "level": "blocking",
   "path": "task-demo.md",
   "diagnostics": [

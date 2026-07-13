@@ -1,4 +1,5 @@
 {
+  "type": "spec",
   "level": "clean",
   "path": "spec-demo.md",
   "diagnostics": []

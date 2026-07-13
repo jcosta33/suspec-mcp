@@ -77,6 +77,7 @@ const CheckDiagnostic = z
   });
 export const CheckReportSchema = z
   .object({
+    type: z.enum(["spec", "task", "review", "change-plan"]),
     level: z.enum(["clean", "warning", "blocking"]),
     path: z.string(),
     diagnostics: z.array(CheckDiagnostic),
@@ -88,16 +89,6 @@ export const CheckReportSchema = z
         code: "custom",
         message: "checked reports must not carry `checked`",
         path: ["checked"],
-      });
-    }
-    if (
-      typeof report.type === "string" &&
-      ["inventory", "audit", "research", "inspection"].includes(report.type)
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        message: `recognized unchecked type ${report.type} must use checked:false`,
-        path: ["type"],
       });
     }
     const expectedLevel = report.diagnostics.some(
@@ -143,8 +134,46 @@ export const CheckFileSchema = z.union([
   UncheckedArtifactSchema,
 ]);
 
+// The optional final record for a multi-path invocation. It is not an artifact and therefore has no
+// artifact type discriminator. The CLI emits it only for one or more blocking C002 collisions.
+export const FileSetReportSchema = z
+  .object({
+    level: z.literal("blocking"),
+    path: z.literal("(file set)"),
+    diagnostics: z.array(CheckDiagnostic).min(1),
+  })
+  .passthrough()
+  .superRefine((report, ctx) => {
+    if (Object.hasOwn(report, "type") || Object.hasOwn(report, "checked")) {
+      ctx.addIssue({
+        code: "custom",
+        message: "file-set reports carry neither `type` nor `checked`",
+      });
+    }
+    if (
+      report.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code !== "C002" || diagnostic.severity !== "hard-error",
+      )
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "file-set reports contain only hard-error C002 diagnostics",
+        path: ["diagnostics"],
+      });
+    }
+  });
+
+export const CheckOutputSchema = z.union([
+  CheckFileSchema.refine((report) => report.path !== "(file set)", {
+    message: "artifact reports cannot use the file-set marker path",
+    path: ["path"],
+  }),
+  FileSetReportSchema,
+]);
+
 export const CheckLineSchema = z.union([
-  CheckFileSchema,
+  CheckOutputSchema,
   z.object({ error: z.string(), message: z.string() }).passthrough(),
 ]);
 

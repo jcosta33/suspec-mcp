@@ -76,7 +76,22 @@ function reportForLevel(level: "clean" | "warning" | "blocking", path: string) {
             line: null,
           },
         ];
-  return { level, path, diagnostics };
+  return { type: "spec", level, path, diagnostics };
+}
+
+function fileSetReport() {
+  return {
+    path: "(file set)",
+    level: "blocking",
+    diagnostics: [
+      {
+        code: "C002",
+        severity: "hard-error",
+        message: "duplicate id",
+        line: null,
+      },
+    ],
+  };
 }
 
 // A scratch root carrying the artifacts the stub reads (it sniffs the checked file's
@@ -408,11 +423,11 @@ describe("invoke_suspec — the subprocess edge", () => {
   it("rejects a file-set report anywhere except one final position", async () => {
     const child = fixedOutputBin(
       [
-        reportForLevel("clean", "(file set)"),
+        fileSetReport(),
         reportForLevel("clean", "first.md"),
         reportForLevel("clean", "second.md"),
       ],
-      0,
+      2,
       "jsonl",
     );
     try {
@@ -499,7 +514,7 @@ describe("invoke_suspec — the subprocess edge", () => {
       );
       expect(result.kind).toBe("launch-error");
       if (result.kind === "launch-error") {
-        expect(result.message).toMatch(/checked reports must not carry/i);
+        expect(result.message).toMatch(/violates the supported contract/i);
       }
     } finally {
       child.cleanup();
@@ -520,7 +535,7 @@ describe("invoke_suspec — the subprocess edge", () => {
       );
       expect(result.kind).toBe("launch-error");
       if (result.kind === "launch-error") {
-        expect(result.message).toMatch(/must use checked:false/i);
+        expect(result.message).toMatch(/violates the supported contract/i);
       }
     } finally {
       child.cleanup();
@@ -532,7 +547,18 @@ describe("invoke_suspec — the subprocess edge", () => {
       [
         reportForLevel("clean", "first.md"),
         reportForLevel("clean", "second.md"),
-        reportForLevel("blocking", "(file set)"),
+        {
+          path: "(file set)",
+          level: "blocking",
+          diagnostics: [
+            {
+              code: "C021",
+              severity: "hard-error",
+              message: "wrong diagnostic",
+              line: null,
+            },
+          ],
+        },
       ],
       2,
       "jsonl",
@@ -546,7 +572,45 @@ describe("invoke_suspec — the subprocess edge", () => {
       );
       expect(result.kind).toBe("launch-error");
       if (result.kind === "launch-error") {
-        expect(result.message).toMatch(/file-set report/i);
+        expect(result.message).toMatch(/violates the supported contract/i);
+      }
+    } finally {
+      child.cleanup();
+    }
+  });
+
+  it("rejects a typed final file-set report", async () => {
+    const child = fixedOutputBin(
+      [
+        reportForLevel("clean", "first.md"),
+        reportForLevel("clean", "second.md"),
+        {
+          type: "spec",
+          path: "(file set)",
+          level: "blocking",
+          diagnostics: [
+            {
+              code: "C002",
+              severity: "hard-error",
+              message: "duplicate id",
+              line: null,
+            },
+          ],
+        },
+      ],
+      2,
+      "jsonl",
+    );
+    try {
+      const result = await invoke_suspec(
+        env(child.bin),
+        "check",
+        ["first.md", "second.md"],
+        checkOptions(),
+      );
+      expect(result.kind).toBe("launch-error");
+      if (result.kind === "launch-error") {
+        expect(result.message).toMatch(/file-set|supported contract/i);
       }
     } finally {
       child.cleanup();
@@ -555,7 +619,7 @@ describe("invoke_suspec — the subprocess edge", () => {
 
   it("rejects a report with an unknown level", async () => {
     const child = fixedOutputBin(
-      [{ level: "unknown", path: "spec.md", diagnostics: [] }],
+      [{ type: "spec", level: "unknown", path: "spec.md", diagnostics: [] }],
       0,
       "jsonl",
     );
@@ -579,6 +643,7 @@ describe("invoke_suspec — the subprocess edge", () => {
     const child = fixedOutputBin(
       [
         {
+          type: "spec",
           level: "warning",
           path: "spec.md",
           diagnostics: [
@@ -614,7 +679,7 @@ describe("invoke_suspec — the subprocess edge", () => {
     'returns kind:"launch-error" for unsupported exit %i even with valid-looking JSON',
     async (exitCode) => {
       const child = fixedOutputBin(
-        { level: "clean", path: "spec.md", diagnostics: [] },
+        { type: "spec", level: "clean", path: "spec.md", diagnostics: [] },
         exitCode,
       );
       try {

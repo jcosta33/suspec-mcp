@@ -400,6 +400,7 @@ describe("suspec-mcp server", () => {
       expect(result.structuredContent.responseFormat).toBe("concise");
       expect(result.structuredContent.data).toEqual([
         {
+          type: "spec",
           level: "warning",
           path: artifactPath("specs/a.md"),
           diagnostics: [
