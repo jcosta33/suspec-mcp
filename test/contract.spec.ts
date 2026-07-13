@@ -380,6 +380,9 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     report.level = "blocking";
     expect(CheckReportSchema.safeParse(report).success).toBe(false);
     report.diagnostics[0].severity = "hard-error";
+    expect(CheckReportSchema.safeParse(report).success).toBe(false);
+    report.diagnostics[0].message =
+      "coverage row AC-001's verify block records a cmd that does not match the requirement's named Verify command";
     expect(CheckReportSchema.safeParse(report).success).toBe(true);
   });
 
@@ -408,9 +411,32 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
       CheckReportSchema.safeParse({
         level: "blocking",
         path: "review.md",
-        diagnostics: [{ ...diagnostic, code: "C013", severity: "hard-error" }],
+        diagnostics: [
+          {
+            ...diagnostic,
+            code: "C013",
+            severity: "hard-error",
+            message:
+              "coverage row AC-001's verify block records a cmd that does not match the requirement's named Verify command",
+          },
+        ],
       }).success,
     ).toBe(true);
+    expect(
+      CheckReportSchema.safeParse({
+        level: "blocking",
+        path: "review.md",
+        diagnostics: [
+          {
+            ...diagnostic,
+            code: "C013",
+            severity: "hard-error",
+            message:
+              "coverage row AC-001 is Supported with only a free-form Evidence cell",
+          },
+        ],
+      }).success,
+    ).toBe(false);
     expect(
       CheckReportSchema.safeParse({
         level: "clean",

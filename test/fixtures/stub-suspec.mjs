@@ -7,7 +7,7 @@
 // the review names a `task:`; companions belong to a review and must exist on disk), so the
 // adapter's companion plumbing is exercised end to end.
 import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { validContract } from "./valid-contract.mjs";
 
@@ -122,7 +122,20 @@ for (let i = 1; i < argv.length; i += 1) {
 if (positionals.length === 0) {
   fail("no artifact named — usage: suspec check <artifact> [<artifact>...]");
 }
-const artifacts = positionals.map((file) => {
+const seen = new Set();
+const distinctPositionals = positionals.filter((file) => {
+  let identity;
+  try {
+    const stats = statSync(file, { bigint: true });
+    identity = `${stats.dev}:${stats.ino}`;
+  } catch {
+    identity = resolve(file);
+  }
+  if (seen.has(identity)) return false;
+  seen.add(identity);
+  return true;
+});
+const artifacts = distinctPositionals.map((file) => {
   if (!existsSync(file)) {
     fail(`file not found: ${file}`);
   }

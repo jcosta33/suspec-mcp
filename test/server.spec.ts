@@ -9,6 +9,7 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
@@ -227,13 +228,22 @@ describe("suspec-mcp server", () => {
         ["check", review, "--spec", specPath, "--task", taskPath, "--json"],
       ]);
 
+      const alias = artifactPath("reviews/review-alias.md");
+      symlinkSync(review, alias);
+      const deduplicated = (await client.callTool({
+        name: "suspec_check",
+        arguments: { paths: [review, review, alias], specPath, taskPath },
+      })) as { structuredContent: { ok: boolean; data: { level: string }[] } };
+      expect(deduplicated.structuredContent.ok).toBe(true);
+      expect(deduplicated.structuredContent.data).toHaveLength(1);
+
       const ambiguous = (await client.callTool({
         name: "suspec_check",
         arguments: { paths: [review, artifactPath("specs/b.md")], specPath },
       })) as { isError?: boolean; content: { text: string }[] };
       expect(ambiguous.isError).toBe(true);
       expect(ambiguous.content[0].text).toMatch(/exactly one review target/);
-      expect(invocations()).toHaveLength(1);
+      expect(invocations()).toHaveLength(2);
     } finally {
       await close();
     }

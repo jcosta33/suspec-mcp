@@ -114,7 +114,7 @@ function validation_message(error: z.ZodError): string {
   return `CLI JSON violates the supported contract: ${issues}`;
 }
 
-function distinct_primary_paths(
+export function distinct_primary_paths(
   paths: readonly string[],
   cwd: string,
 ): string[] {
@@ -221,19 +221,28 @@ export function invoke_suspec(
       }
       const payloadSchema =
         opts.expected === "contract" ? ContractSchema : CheckFileSchema;
-      const wireSchema = z.union([payloadSchema, SuspecErrorSchema]);
       const documents = opts.expected === "reports" ? (parsed as unknown[]) : [parsed];
       const validated: unknown[] = [];
       for (const document of documents) {
-        const result = wireSchema.safeParse(document);
-        if (!result.success) {
+        const payloadResult = payloadSchema.safeParse(document);
+        const errorResult = SuspecErrorSchema.safeParse(document);
+        if (payloadResult.success && errorResult.success) {
           return {
             kind: "launch-error",
             invocation,
-            message: validation_message(result.error),
+            message: `CLI JSON matches both success and structured-error schemas`,
           };
         }
-        validated.push(result.data);
+        if (!payloadResult.success && !errorResult.success) {
+          return {
+            kind: "launch-error",
+            invocation,
+            message: validation_message(payloadResult.error),
+          };
+        }
+        validated.push(
+          payloadResult.success ? payloadResult.data : errorResult.data,
+        );
       }
       const data = opts.expected === "reports" ? validated : validated[0];
       const structuredErrorCount = validated.filter(
@@ -274,16 +283,25 @@ export function invoke_suspec(
       const reports = validated as {
         level: keyof typeof exitByLevel;
         path: string;
+        diagnostics?: { code: string; severity: string }[];
       }[];
       const expectedPrimaryPaths = distinct_primary_paths(positional, env.cwd);
       const primaryPathsMatch = expectedPrimaryPaths.every(
         (path, index) => reports[index]?.path === path,
       );
       const hasNoSetReport = reports.length === expectedPrimaryPaths.length;
+      const setReport = reports[expectedPrimaryPaths.length];
       const hasOneFinalSetReport =
         expectedPrimaryPaths.length > 1 &&
         reports.length === expectedPrimaryPaths.length + 1 &&
-        reports.at(-1)?.path === "(file set)";
+        setReport?.path === "(file set)" &&
+        setReport.level === "blocking" &&
+        Array.isArray(setReport.diagnostics) &&
+        setReport.diagnostics.length > 0 &&
+        setReport.diagnostics.every(
+          (diagnostic) =>
+            diagnostic.code === "C002" && diagnostic.severity === "hard-error",
+        );
       if (!primaryPathsMatch || (!hasNoSetReport && !hasOneFinalSetReport)) {
         return {
           kind: "launch-error",

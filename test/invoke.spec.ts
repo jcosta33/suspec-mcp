@@ -456,6 +456,57 @@ describe("invoke_suspec — the subprocess edge", () => {
     }
   });
 
+  it("rejects one document that matches both report and structured-error schemas", async () => {
+    const child = fixedOutputBin(
+      {
+        ...reportForLevel("blocking", "spec.md"),
+        error: "Usage",
+        message: "ambiguous payload",
+      },
+      2,
+    );
+    try {
+      const result = await invoke_suspec(
+        env(child.bin),
+        "check",
+        ["spec.md"],
+        checkOptions(),
+      );
+      expect(result.kind).toBe("launch-error");
+      if (result.kind === "launch-error") {
+        expect(result.message).toMatch(/matches both.*schemas/i);
+      }
+    } finally {
+      child.cleanup();
+    }
+  });
+
+  it("rejects a final file-set report whose diagnostics are not exclusively C002", async () => {
+    const child = fixedOutputBin(
+      [
+        reportForLevel("clean", "first.md"),
+        reportForLevel("clean", "second.md"),
+        reportForLevel("blocking", "(file set)"),
+      ],
+      2,
+      "jsonl",
+    );
+    try {
+      const result = await invoke_suspec(
+        env(child.bin),
+        "check",
+        ["first.md", "second.md"],
+        checkOptions(),
+      );
+      expect(result.kind).toBe("launch-error");
+      if (result.kind === "launch-error") {
+        expect(result.message).toMatch(/file-set report/i);
+      }
+    } finally {
+      child.cleanup();
+    }
+  });
+
   it("rejects a report with an unknown level", async () => {
     const child = fixedOutputBin(
       [{ level: "unknown", path: "spec.md", diagnostics: [] }],

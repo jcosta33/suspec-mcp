@@ -41,6 +41,8 @@ export const SUPPORTED_CHECKS = [
 const SUPPORTED_CHECK_BY_ID = new Map<string, (typeof SUPPORTED_CHECKS)[number]>(
   SUPPORTED_CHECKS.map((check) => [check.id, check]),
 );
+const C013_CMD_MISMATCH =
+  /^coverage row .+'s verify block records a cmd that does not match the requirement's named Verify command$/;
 
 const CheckDiagnostic = z
   .object({
@@ -62,7 +64,9 @@ const CheckDiagnostic = z
     }
     const severityAllowed =
       diagnostic.severity === expected.severity ||
-      (diagnostic.code === "C013" && diagnostic.severity === "hard-error");
+      (diagnostic.code === "C013" &&
+        diagnostic.severity === "hard-error" &&
+        C013_CMD_MISMATCH.test(diagnostic.message));
     if (!severityAllowed) {
       ctx.addIssue({
         code: "custom",

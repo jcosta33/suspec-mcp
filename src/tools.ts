@@ -7,7 +7,11 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { isAbsolute } from "node:path";
 
-import { type SuspecEnv, invoke_suspec } from "./suspec/invoke.ts";
+import {
+  distinct_primary_paths,
+  type SuspecEnv,
+  invoke_suspec,
+} from "./suspec/invoke.ts";
 import { invoke_supported_contract } from "./suspec/compatibility.ts";
 import { respond, tool_error, ENVELOPE_OUTPUT_SHAPE } from "./envelope.ts";
 import { slice_check_results, slice_contract } from "./slices.ts";
@@ -89,7 +93,10 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
         }
       }
       const flags: Record<string, string> = {};
-      if ((specPath !== undefined || taskPath !== undefined) && paths.length !== 1) {
+      if (
+        (specPath !== undefined || taskPath !== undefined) &&
+        distinct_primary_paths(paths, ctx.env.cwd).length !== 1
+      ) {
         return tool_error(
           "specPath/taskPath are valid only when paths contains exactly one review target",
         );
