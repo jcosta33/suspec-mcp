@@ -1,7 +1,8 @@
 # suspec-mcp
 
-An MCP stdio adapter for shell-less access to Suspec's deterministic checker. It requires checks
-contract `0.19.0`, validates every CLI JSON payload, and preserves ordered reports and exit status.
+A thin MCP stdio adapter for shell-less access to Suspec's deterministic checker. Thin is the feature.
+It requires checks contract `0.19.0`, validates every CLI JSON payload, and preserves ordered reports
+and exit status.
 
 ## Tools
 
@@ -44,11 +45,12 @@ Every successful adapter invocation returns:
 - optional `note`;
 - `responseFormat`.
 
-A check with blocking diagnostics remains `ok: true`; inspect `data.level`, diagnostics, and
-`source.exitCode`.
+`ok` means the adapter worked, not that the artifact is good. A check with blocking diagnostics
+remains `ok: true`; inspect `data.level`, diagnostics, and `source.exitCode`.
 
-CLI exits `0`, `1`, and `2` belong to the contract. Any other exit is an adapter launch failure,
-even when stdout resembles JSON. Structured CLI errors are accepted only at exit `2`.
+CLI exits `0`, `1`, and `2` belong to the contract. Any other exit is an adapter launch failure.
+JSON-shaped stdout does not negotiate a new contract. Structured CLI errors are accepted only at
+exit `2`.
 
 ## Install
 
@@ -83,7 +85,8 @@ CLI precedence:
 | `--suspec-bin <path>` | `SUSPEC_BIN` | `suspec` on `PATH` |
 
 Each tool call supplies full artifact paths. The server binds no repository, workspace,
-configuration, or store. `~/.agents/artifacts/<workspace>/` has no special runtime meaning.
+configuration, or store. It is an adapter, not a second product brain.
+`~/.agents/artifacts/<workspace>/` has no special runtime meaning.
 
 ## Security
 
@@ -93,13 +96,14 @@ configuration, or store. `~/.agents/artifacts/<workspace>/` has no special runti
 - Only `check` and supported companion or contract flags reach the CLI.
 - The CLI check surface is read-only.
 
-The server can read any path available to its process. Match its filesystem permissions to the client
-trust boundary or apply OS sandboxing.
+The server can read any path available to its process. Filesystem permission is the security boundary,
+not a suggestion. Match process permissions to the client trust boundary or apply OS sandboxing.
 
 ## Develop
 
-Fixture drift uses the real CLI. Set `SUSPEC_BIN` to an absolute CLI source path; otherwise a sibling
-package named `suspec-cli` may satisfy discovery. Generation rejects other packages.
+Fixture drift uses the real CLI. Handwritten agreement proves nothing. Set `SUSPEC_BIN` to an
+absolute CLI source path; otherwise a sibling package named `suspec-cli` may satisfy discovery.
+Generation rejects other packages.
 
 ```sh
 export SUSPEC_BIN=/absolute/path/to/suspec-cli/bin/suspec.js
