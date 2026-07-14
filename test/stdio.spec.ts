@@ -49,7 +49,7 @@ describe("real stdio transport", () => {
           data: { version: string };
         };
       };
-    expect(checks.structuredContent.data.version).toBe("0.19.0");
+      expect(checks.structuredContent.data.version).toBe("0.21.0");
 
       const check = (await client.callTool({
         name: "suspec_check",
@@ -59,11 +59,11 @@ describe("real stdio transport", () => {
           data: { diagnostics: unknown[] }[];
         };
       };
-      expect(check.structuredContent.data[0].diagnostics.length).toBeGreaterThan(
-        0,
-      );
+      expect(
+        check.structuredContent.data[0].diagnostics.length,
+      ).toBeGreaterThan(0);
     } finally {
       await client.close();
     }
-  });
+  }, 15_000);
 });

@@ -1,5 +1,5 @@
 {
-  "version": "0.19.0",
+  "version": "0.21.0",
   "checks": [
     {
       "id": "C001",
@@ -94,6 +94,21 @@
     {
       "id": "C024",
       "name": "closed-task-resolved",
+      "severity": "hard-error"
+    },
+    {
+      "id": "C025",
+      "name": "spec-shape",
+      "severity": "hard-error"
+    },
+    {
+      "id": "C026",
+      "name": "evidence-receipt-resolves",
+      "severity": "hard-error"
+    },
+    {
+      "id": "C027",
+      "name": "review-spec-ref",
       "severity": "hard-error"
     }
   ]

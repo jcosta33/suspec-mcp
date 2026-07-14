@@ -1,7 +1,7 @@
 // The ONE subprocess edge. suspec-mcp never imports suspec-cli's internals — it shells out to the
 // `suspec` CLI's `--json` contract with a FIXED argv array (never a shell string, never a client-injected
 // flag). The CLI's whole surface is one verb (`suspec check`), so the allow-list is exactly
-// that: `check`, plus the review-companion flags (`--spec`/`--task`, each value a full path already
+// that: `check`, plus the companion flags (`--spec`/`--task`, each value a full path already
 // validated by the tool boundary) and the bare `--contract`. `--json` is always appended;
 // suspec-mcp passes no other flag. This keeps suspec-cli at its minimal footprint and couples the two
 // repos only through the public, tested JSON interface.
@@ -159,7 +159,7 @@ export function invoke_suspec(
     }
     args.push(flag);
   }
-  // The review-companion flags (`--spec`/`--task`), each full path already validated by the caller. The
+  // The companion flags (`--spec`/`--task`), each full path already validated by the caller. The
   // flag NAME is allow-list-checked here as defense in depth — a slip that tried to pass anything
   // else would throw, never silently reach the CLI.
   for (const [flag, value] of Object.entries(opts.flags ?? {})) {
@@ -221,7 +221,8 @@ export function invoke_suspec(
       }
       const payloadSchema =
         opts.expected === "contract" ? ContractSchema : CheckOutputSchema;
-      const documents = opts.expected === "reports" ? (parsed as unknown[]) : [parsed];
+      const documents =
+        opts.expected === "reports" ? (parsed as unknown[]) : [parsed];
       const validated: unknown[] = [];
       for (const document of documents) {
         const payloadResult = payloadSchema.safeParse(document);
@@ -248,14 +249,18 @@ export function invoke_suspec(
       const structuredErrorCount = validated.filter(
         (document) => SuspecErrorSchema.safeParse(document).success,
       ).length;
-      if (
-        structuredErrorCount > 0 &&
-        structuredErrorCount < validated.length
-      ) {
+      if (structuredErrorCount > 0 && structuredErrorCount < validated.length) {
         return {
           kind: "launch-error",
           invocation,
           message: `\`${command}\` emitted a mixed report/structured error stream`,
+        };
+      }
+      if (structuredErrorCount > 1) {
+        return {
+          kind: "launch-error",
+          invocation,
+          message: `\`${command}\` emitted ${structuredErrorCount} structured errors; expected exactly one`,
         };
       }
       if (structuredErrorCount === validated.length && exitCode !== 2) {

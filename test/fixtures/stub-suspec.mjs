@@ -3,9 +3,8 @@
 // surface. Records every invocation's argv to STUB_LOG (so tests can assert which subprocesses ran /
 // that no mutation flag was ever passed) and emits JSON to stdout mirroring the real CLI's --json
 // shapes. Like the real CLI, it reads the checked file itself: the kind sniff comes from the file's
-// frontmatter `type:`, and a review packet enforces the companion rules (--spec always; --task iff
-// the review names a `task:`; companions belong to a review and must exist on disk), so the
-// adapter's companion plumbing is exercised end to end.
+// frontmatter `type:`. Tasks require --spec. Reviews require --spec and require --task iff they name
+// a `task:`. Companions must exist on disk, so the adapter's plumbing is exercised end to end.
 import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -149,6 +148,7 @@ const artifacts = distinctPositionals.map((file) => {
   return { file, source, head, type: scalar(head, "type") ?? null };
 });
 const reviews = artifacts.filter((artifact) => artifact.type === "review");
+const tasks = artifacts.filter((artifact) => artifact.type === "task");
 if (reviews.length > 0 && artifacts.length > 1) {
   fail(
     "a review packet is checked alone — usage: suspec check <review-path> --spec <spec-path> [--task <task-path>]",
@@ -156,14 +156,35 @@ if (reviews.length > 0 && artifacts.length > 1) {
 }
 const { file, head, type } = artifacts[0];
 
-// The companion flags belong to a review and nothing else, mirrored from the real CLI.
+if (reviews.length === 0 && flag("--task") !== undefined) {
+  fail(
+    "--task accompanies one review packet — the named artifacts carry no review",
+  );
+}
 if (
   reviews.length === 0 &&
-  (flag("--spec") !== undefined || flag("--task") !== undefined)
+  tasks.length === 0 &&
+  flag("--spec") !== undefined
 ) {
+  fail("--spec accompanies task paths or one review packet");
+}
+if (tasks.length > 0 && flag("--spec") === undefined) {
   fail(
-    "--spec/--task accompany a review packet — the named artifacts carry no review",
+    "task checks need their source spec: missing --spec — usage: suspec check <task-path> [<task-path>...] --spec <spec-path>",
   );
+}
+if (tasks.length > 0) {
+  const spec = flag("--spec");
+  if (!existsSync(spec)) fail(`--spec file not found: ${spec}`);
+  const specHead = frontmatter(readFileSync(spec, "utf8"));
+  const specId = scalar(specHead, "id");
+  for (const task of tasks) {
+    if (!list(task.head, "source").includes(specId)) {
+      fail(
+        `task \`${task.file}\` does not name handed spec \`${specId ?? "no id"}\` in \`source:\``,
+      );
+    }
+  }
 }
 
 if (type === "review") {
@@ -204,9 +225,7 @@ if (type === "review") {
   }
   const specType = scalar(specHead, "type");
   if (specType !== undefined && specType !== "spec") {
-    fail(
-      `--spec companion must have \`type: spec\`; received ${specType}`,
-    );
+    fail("--spec companion fails deterministic checks: C021, C025, C008");
   }
   if (task !== undefined) {
     const taskHead = frontmatter(readFileSync(task, "utf8"));
@@ -218,9 +237,7 @@ if (type === "review") {
     }
     const taskType = scalar(taskHead, "type");
     if (taskType !== "task") {
-      fail(
-        `--task companion must have \`type: task\`; received ${taskType ?? "no type"}`,
-      );
+      fail("--task companion fails deterministic checks: C022");
     }
     const taskId = scalar(taskHead, "id");
     if (taskRef !== taskId) {
@@ -246,7 +263,7 @@ if (type === "review") {
     if (
       !list(taskHead, "scope").some((id) => /\b[A-Z][A-Z0-9]*-\d+\b/.test(id))
     ) {
-      fail("--task companion must name at least one requirement in `scope:`");
+      fail("--task companion fails deterministic checks: C022");
     }
     const specId = scalar(specHead, "id");
     if (specId === undefined) {
@@ -302,7 +319,11 @@ for (const artifact of artifacts) {
   }
 }
 if (duplicateDiagnostics.length > 0) {
-  emit({ path: "(file set)", level: "blocking", diagnostics: duplicateDiagnostics });
+  emit({
+    path: "(file set)",
+    level: "blocking",
+    diagnostics: duplicateDiagnostics,
+  });
   status = 2;
 }
 process.exit(status);

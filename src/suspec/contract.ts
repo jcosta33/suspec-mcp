@@ -7,7 +7,7 @@
 
 import { z } from "zod";
 
-export const SUPPORTED_CONTRACT_VERSION = "0.19.0" as const;
+export const SUPPORTED_CONTRACT_VERSION = "0.21.0" as const;
 
 export const SUPPORTED_CHECKS = [
   { id: "C001", name: "unique-ids", severity: "hard-error" },
@@ -33,6 +33,9 @@ export const SUPPORTED_CHECKS = [
   { id: "C022", name: "task-shape", severity: "hard-error" },
   { id: "C023", name: "task-evidence", severity: "hard-error" },
   { id: "C024", name: "closed-task-resolved", severity: "hard-error" },
+  { id: "C025", name: "spec-shape", severity: "hard-error" },
+  { id: "C026", name: "evidence-receipt-resolves", severity: "hard-error" },
+  { id: "C027", name: "review-spec-ref", severity: "hard-error" },
 ] as const;
 
 // --- suspec check <artifact> --json → the per-file check report ------------------------------------

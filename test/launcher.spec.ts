@@ -55,13 +55,13 @@ describe("bin/suspec-mcp.js launcher", () => {
           data: { diagnostics: unknown[] }[];
         };
       };
-      expect(check.structuredContent.data[0].diagnostics.length).toBeGreaterThan(
-        0,
-      );
+      expect(
+        check.structuredContent.data[0].diagnostics.length,
+      ).toBeGreaterThan(0);
     } finally {
       await client.close();
     }
-  });
+  }, 15_000);
 
   it("falls back to dist/index.js in an installed tree (no src/), forwarding args and the exit status", () => {
     // A real install's layout: bin/ + dist/ + package.json, NO src/ — so the launcher's

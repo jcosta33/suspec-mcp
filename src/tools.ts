@@ -1,6 +1,6 @@
 // The Suspec MCP tool surface:
-//   • suspec_check — run one CLI process over an ordered artifact path set. A lone review may carry
-//     explicit spec/task companions.
+//   • suspec_check — run one CLI process over an ordered artifact path set. Tasks carry one explicit
+//     spec companion; a lone review may also carry a task companion.
 //   • suspec_get_checks — the checks contract itself (`suspec check --contract`).
 
 import { z } from "zod";
@@ -62,8 +62,8 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
       title: "Check Suspec artifacts",
       description:
         "Run one `suspec check` process over an ordered non-empty array of absolute artifact paths. " +
-        "Batching enables cross-file checks such as C002. A review must be the only primary path and " +
-        "may receive absolute specPath and taskPath companions. Returns the CLI reports in output order.",
+        "Batching enables cross-file checks such as C002. Task paths require one absolute specPath. " +
+        "A review must be the only primary path and may also receive taskPath. Returns CLI reports in order.",
       inputSchema: {
         paths: z
           .array(z.string())
@@ -72,15 +72,11 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
         specPath: z
           .string()
           .optional()
-          .describe(
-            "absolute source-spec path for a single review target",
-          ),
+          .describe("absolute source-spec path for task paths or one review"),
         taskPath: z
           .string()
           .optional()
-          .describe(
-            "absolute task-packet path for a single review target",
-          ),
+          .describe("absolute task-packet path for a single review target"),
         ...responseFormatInput,
       },
       outputSchema: ENVELOPE_OUTPUT_SHAPE,
@@ -94,11 +90,11 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
       }
       const flags: Record<string, string> = {};
       if (
-        (specPath !== undefined || taskPath !== undefined) &&
+        taskPath !== undefined &&
         distinct_primary_paths(paths, ctx.env.cwd).length !== 1
       ) {
         return tool_error(
-          "specPath/taskPath are valid only when paths contains exactly one review target",
+          "taskPath is valid only when paths resolves to one review target",
         );
       }
       if (specPath !== undefined) {
@@ -114,13 +110,16 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
         flags["--task"] = taskPath;
       }
       const format = resolve_format(responseFormat);
-      return respond(await invoke_suspec(ctx.env, "check", paths, {
-        flags,
-        expected: "reports",
-      }), {
-        format,
-        slice: slice_check_results,
-      });
+      return respond(
+        await invoke_suspec(ctx.env, "check", paths, {
+          flags,
+          expected: "reports",
+        }),
+        {
+          format,
+          slice: slice_check_results,
+        },
+      );
     },
   );
 
@@ -138,10 +137,10 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
     },
     async ({ responseFormat }) => {
       const format = resolve_format(responseFormat);
-      return respond(
-        await invoke_supported_contract(ctx.env),
-        { format, slice: slice_contract },
-      );
+      return respond(await invoke_supported_contract(ctx.env), {
+        format,
+        slice: slice_contract,
+      });
     },
   );
 }

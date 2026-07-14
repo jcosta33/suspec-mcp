@@ -1,7 +1,7 @@
 # suspec-mcp
 
 A thin MCP stdio adapter for shell-less access to Suspec's deterministic checker. Thin is the feature.
-It requires checks contract `0.19.0`, validates every CLI JSON payload, and preserves ordered reports
+It requires checks contract `0.21.0`, validates every CLI JSON payload, and preserves ordered reports
 and exit status.
 
 ## Tools
@@ -14,25 +14,25 @@ selects behavior.
 | Input            | Meaning                                         |
 | ---------------- | ----------------------------------------------- |
 | `paths`          | ordered non-empty absolute primary paths        |
-| `specPath`       | absolute spec companion for one review          |
+| `specPath`       | absolute spec for task paths or one review      |
 | `taskPath`       | optional absolute task companion for one review |
 | `responseFormat` | `concise` or `detailed`                         |
 
 Spec, task, change-plan, and review inputs receive their CLI checks. Inventory, audit, and research
 return `checked: false`. Missing and unknown types are rejected.
 
-One invocation preserves cross-file checks such as C002. Companions are valid only when `paths`
-contains exactly one review target. Missing, unreferenced, or ambiguous companions produce the CLI's
-structured refusal with `ok: false`.
+One invocation preserves cross-file checks such as C002. Task paths share one `specPath`; every task
+must name that spec. A review is the only primary when `taskPath` is present. Invalid companion
+pairing produces the CLI's structured refusal with `ok: false`.
 
 Every artifact result repeats its type. Only the optional final `(file set)` report has none.
 
 ### `suspec_get_checks`
 
-Returns the contract version and each core check's ID, name, and severity. The same contract is
-available at `suspec://checks`.
+Returns the contract version plus each core check's ID and severity in concise mode. Use
+`responseFormat: "detailed"` for names. The same contract is available at `suspec://checks`.
 
-Startup and resource reads require exact contract `0.19.0` at exit 0. Resource failure throws instead
+Startup and resource reads require exact contract `0.21.0` at exit 0. Resource failure throws instead
 of returning an error document as resource content.
 
 ## Envelope
@@ -62,7 +62,6 @@ git clone https://github.com/jcosta33/suspec-mcp
 cd suspec-mcp
 corepack enable
 pnpm install --frozen-lockfile
-pnpm build
 ```
 
 Configure absolute entry points so GUI clients do not depend on shell `PATH`:
@@ -94,6 +93,7 @@ configuration, or store. It is an adapter, not a second product brain.
   characters.
 - The adapter passes a fixed argument array without a shell.
 - Only `check` and supported companion or contract flags reach the CLI.
+- Review checks may read local relative evidence receipts linked by the review.
 - The CLI check surface is read-only.
 
 The server can read any path available to its process. Filesystem permission is the security boundary,

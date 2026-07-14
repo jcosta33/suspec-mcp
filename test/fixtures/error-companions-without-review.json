@@ -1,4 +1,4 @@
 {
   "error": "Usage",
-  "message": "--spec/--task accompany a review packet — the named artifacts carry no review"
+  "message": "--spec accompanies task paths or one review packet"
 }

@@ -101,7 +101,7 @@ function scratchEnv(bin: string): { env: SuspecEnv; cleanup: () => void } {
   writeFileSync(join(dir, "spec.md"), "---\ntype: spec\nid: SPEC-x\n---\n");
   writeFileSync(
     join(dir, "review.md"),
-    "---\ntype: review\nid: REVIEW-x\ntask: TASK-x\n---\n",
+    "---\ntype: review\nid: REVIEW-x\nspec: SPEC-x\ntask: TASK-x\nreviewer: fixture-reviewer\n---\n",
   );
   writeFileSync(
     join(dir, "task.md"),
@@ -227,7 +227,7 @@ describe("invoke_suspec — the subprocess edge", () => {
       chmodSync(spacedBin, 0o755);
       writeFileSync(
         join(s.env.cwd, "review path.md"),
-        "---\ntype: review\nid: REVIEW-x\ntask: TASK-x\n---\n",
+        "---\ntype: review\nid: REVIEW-x\nspec: SPEC-x\ntask: TASK-x\nreviewer: fixture-reviewer\n---\n",
       );
       writeFileSync(
         join(s.env.cwd, "spec path.md"),
@@ -465,6 +465,31 @@ describe("invoke_suspec — the subprocess edge", () => {
       expect(result.kind).toBe("launch-error");
       if (result.kind === "launch-error") {
         expect(result.message).toMatch(/mixed report.*structured error/i);
+      }
+    } finally {
+      child.cleanup();
+    }
+  });
+
+  it("rejects multiple structured-error documents", async () => {
+    const child = fixedOutputBin(
+      [
+        { error: "Usage", message: "first" },
+        { error: "Usage", message: "second" },
+      ],
+      2,
+      "jsonl",
+    );
+    try {
+      const result = await invoke_suspec(
+        env(child.bin),
+        "check",
+        ["spec.md"],
+        checkOptions(),
+      );
+      expect(result.kind).toBe("launch-error");
+      if (result.kind === "launch-error") {
+        expect(result.message).toMatch(/2 structured errors.*exactly one/i);
       }
     } finally {
       child.cleanup();
@@ -778,7 +803,7 @@ describe("checks-contract compatibility probe", () => {
     );
     try {
       await expect(require_supported_contract(env(child.bin))).rejects.toThrow(
-        /checks contract 0\.19\.0.*exit 0/i,
+        /checks contract 0\.21\.0.*exit 0/i,
       );
     } finally {
       child.cleanup();

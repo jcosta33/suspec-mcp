@@ -1,4 +1,4 @@
 {
   "error": "Usage",
-  "message": "--spec companion must have `type: spec`; received task"
+  "message": "--spec companion fails deterministic checks: C021, C025, C008"
 }

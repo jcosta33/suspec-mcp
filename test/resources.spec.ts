@@ -21,14 +21,11 @@ const contractExitAfterProbeBin = join(
 );
 const malformedContracts = [
   ["empty-contract-suspec.mjs", /missing check ID C001/],
-  ["partial-contract-suspec.mjs", /missing check ID C024/],
+  ["partial-contract-suspec.mjs", /missing check ID C027/],
   ["duplicate-contract-suspec.mjs", /duplicate check ID C001/],
   ["unknown-contract-suspec.mjs", /unknown check ID C999/],
   ["corrupted-contract-suspec.mjs", /must be named unique-ids/],
-  [
-    "corrupted-severity-contract-suspec.mjs",
-    /must have severity hard-error/,
-  ],
+  ["corrupted-severity-contract-suspec.mjs", /must have severity hard-error/],
 ] as const;
 
 let root: string;
@@ -85,7 +82,8 @@ describe("suspec-mcp resources", () => {
         .map((r) => r.uri)
         .sort();
       expect(fixed).toEqual(["suspec://checks"]);
-      const templates = (await client.listResourceTemplates()).resourceTemplates;
+      const templates = (await client.listResourceTemplates())
+        .resourceTemplates;
       expect(templates).toEqual([]);
     } finally {
       await close();
@@ -102,7 +100,7 @@ describe("suspec-mcp resources", () => {
         version: string;
         checks: { id: string }[];
       };
-    expect(parsed.version).toBe("0.19.0");
+      expect(parsed.version).toBe("0.21.0");
       expect(parsed.checks.length).toBeGreaterThan(0);
       expect(invocations()).toEqual([
         ["check", "--contract", "--json"],
@@ -149,7 +147,7 @@ describe("suspec-mcp resources", () => {
   it("refuses startup when the CLI contract version is not exactly supported", async () => {
     await expect(
       create_server({ env: { bin: oldContractBin, cwd: root } }),
-    ).rejects.toThrow(/checks contract 0\.19\.0/);
+    ).rejects.toThrow(/checks contract 0\.21\.0/);
   });
 
   it.each(malformedContracts)(
@@ -158,7 +156,7 @@ describe("suspec-mcp resources", () => {
       await expect(
         create_server({ env: { bin: join(fixtures, name), cwd: root } }),
       ).rejects.toThrow(
-        new RegExp(`checks contract 0\\.19\\.0.*${structuralError.source}`),
+        new RegExp(`checks contract 0\\.21\\.0.*${structuralError.source}`),
       );
     },
   );

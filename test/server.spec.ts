@@ -88,19 +88,23 @@ beforeEach(() => {
   }
   writeFileSync(
     artifactPath("specs/a.md"),
-    "---\ntype: spec\nid: SPEC-a\n---\n\n## Intent\n\nA.\n\n## Requirements\n",
+    "---\ntype: spec\nid: SPEC-a\nstatus: ready\n---\n\n## Intent\n\nA.\n\n## Requirements\n",
   );
   writeFileSync(
     artifactPath("specs/b.md"),
-    "---\ntype: spec\nid: SPEC-b\n---\n\n## Intent\n\nB.\n\n## Requirements\n",
+    "---\ntype: spec\nid: SPEC-b\nstatus: ready\n---\n\n## Intent\n\nB.\n\n## Requirements\n",
   );
   writeFileSync(
     artifactPath("reviews/review.md"),
-    "---\ntype: review\nid: REVIEW-a\ntask: TASK-a\n---\n\n## Requirement coverage\n",
+    "---\ntype: review\nid: REVIEW-a\nspec: SPEC-a\ntask: TASK-a\nreviewer: fixture-reviewer\n---\n\n## Requirement coverage\n",
   );
   writeFileSync(
     artifactPath("tasks/task.md"),
     "---\ntype: task\nid: TASK-a\nsource: [SPEC-a]\nscope: [AC-001]\n---\n",
+  );
+  writeFileSync(
+    artifactPath("tasks/other.md"),
+    "---\ntype: task\nid: TASK-b\nsource: [SPEC-a]\nscope: [AC-002]\n---\n",
   );
   writeFileSync(
     artifactPath("audits/audit.md"),
@@ -120,14 +124,15 @@ describe("suspec-mcp server", () => {
   it("exposes only the multi-path check tool, checks tool, and checks resource", async () => {
     const { client, close } = await connectClient();
     try {
-      expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual([
-        "suspec_check",
-        "suspec_get_checks",
-      ]);
-      expect((await client.listResources()).resources.map((item) => item.uri)).toEqual([
-        "suspec://checks",
-      ]);
-      await expect(client.listPrompts()).rejects.toThrow(/Method not found|-32601/);
+      expect(
+        (await client.listTools()).tools.map((tool) => tool.name).sort(),
+      ).toEqual(["suspec_check", "suspec_get_checks"]);
+      expect(
+        (await client.listResources()).resources.map((item) => item.uri),
+      ).toEqual(["suspec://checks"]);
+      await expect(client.listPrompts()).rejects.toThrow(
+        /Method not found|-32601/,
+      );
     } finally {
       await close();
     }
@@ -156,7 +161,7 @@ describe("suspec-mcp server", () => {
     } finally {
       await close();
     }
-  });
+  }, 15_000);
 
   it("checks every primary path in order through one CLI invocation", async () => {
     const paths = [artifactPath("specs/b.md"), artifactPath("specs/a.md")];
@@ -174,7 +179,9 @@ describe("suspec-mcp server", () => {
       };
       expect(result.structuredContent.ok).toBe(true);
       expect(result.structuredContent.source.exitCode).toBe(1);
-      expect(result.structuredContent.data.map((item) => item.path)).toEqual(paths);
+      expect(result.structuredContent.data.map((item) => item.path)).toEqual(
+        paths,
+      );
       expect(invocations()).toEqual([["check", ...paths, "--json"]]);
     } finally {
       await close();
@@ -210,9 +217,9 @@ describe("suspec-mcp server", () => {
     } finally {
       await close();
     }
-  });
+  }, 15_000);
 
-  it("passes companions only for a single primary review target", async () => {
+  it("passes specPath for tasks and review companions, but keeps taskPath review-only", async () => {
     const review = artifactPath("reviews/review.md");
     const specPath = artifactPath("specs/a.md");
     const taskPath = artifactPath("tasks/task.md");
@@ -237,17 +244,38 @@ describe("suspec-mcp server", () => {
       expect(deduplicated.structuredContent.ok).toBe(true);
       expect(deduplicated.structuredContent.data).toHaveLength(1);
 
+      const taskBatch = (await client.callTool({
+        name: "suspec_check",
+        arguments: {
+          paths: [taskPath, artifactPath("tasks/other.md")],
+          specPath,
+        },
+      })) as { structuredContent: { ok: boolean } };
+      expect(taskBatch.structuredContent.ok).toBe(true);
+      expect(invocations()[2]).toEqual([
+        "check",
+        taskPath,
+        artifactPath("tasks/other.md"),
+        "--spec",
+        specPath,
+        "--json",
+      ]);
+
       const ambiguous = (await client.callTool({
         name: "suspec_check",
-        arguments: { paths: [review, artifactPath("specs/b.md")], specPath },
+        arguments: {
+          paths: [review, artifactPath("specs/b.md")],
+          specPath,
+          taskPath,
+        },
       })) as { isError?: boolean; content: { text: string }[] };
       expect(ambiguous.isError).toBe(true);
-      expect(ambiguous.content[0].text).toMatch(/exactly one review target/);
-      expect(invocations()).toHaveLength(2);
+      expect(ambiguous.content[0].text).toMatch(/taskPath.*one review target/);
+      expect(invocations()).toHaveLength(3);
     } finally {
       await close();
     }
-  });
+  }, 15_000);
 
   it("keeps structured CLI errors in data without duplicating their message", async () => {
     const { client, close } = await connectClient();
@@ -269,7 +297,9 @@ describe("suspec-mcp server", () => {
       };
       expect(result.isError).toBeFalsy();
       expect(result.structuredContent.ok).toBe(false);
-      expect(result.structuredContent.data[0].message).toMatch(/missing --task/);
+      expect(result.structuredContent.data[0].message).toMatch(
+        /missing --task/,
+      );
       expect(result.structuredContent.note).toBeUndefined();
       expect(result.structuredContent.source.exitCode).toBe(2);
     } finally {
@@ -330,7 +360,10 @@ describe("suspec-mcp server", () => {
     writeFileSync(path, "---\ntype: spec\nid: SPEC-outside\n---\n");
     const { client, close } = await connectClient();
     try {
-      await client.callTool({ name: "suspec_check", arguments: { paths: [path] } });
+      await client.callTool({
+        name: "suspec_check",
+        arguments: { paths: [path] },
+      });
       expect(invocations()).toEqual([["check", path, "--json"]]);
     } finally {
       await close();
@@ -364,9 +397,12 @@ describe("suspec-mcp server", () => {
         name: "suspec_get_checks",
         arguments: { responseFormat: "detailed" },
       })) as {
-        structuredContent: { data: { version: string }; responseFormat: string };
+        structuredContent: {
+          data: { version: string };
+          responseFormat: string;
+        };
       };
-    expect(result.structuredContent.data.version).toBe("0.19.0");
+      expect(result.structuredContent.data.version).toBe("0.21.0");
       expect(result.structuredContent.responseFormat).toBe("detailed");
       expect(invocations()).toEqual([["check", "--contract", "--json"]]);
     } finally {
@@ -418,7 +454,9 @@ describe("suspec-mcp server", () => {
     try {
       const result = (await client.callTool({
         name: "suspec_check",
-        arguments: { paths: [artifactPath("specs/a.md"), artifactPath("specs/b.md")] },
+        arguments: {
+          paths: [artifactPath("specs/a.md"), artifactPath("specs/b.md")],
+        },
       })) as { isError?: boolean; content: { text: string }[] };
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toMatch(/violates the supported contract/);

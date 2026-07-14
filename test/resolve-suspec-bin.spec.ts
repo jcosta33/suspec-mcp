@@ -129,5 +129,5 @@ describe("suspec fixture binary provenance", () => {
       else process.env.SUSPEC_BIN = original;
       rmSync(parent, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 });

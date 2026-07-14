@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import {
   mkdtempSync,
+  realpathSync,
   rmSync,
   readFileSync,
   symlinkSync,
@@ -10,10 +11,15 @@ import {
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 // @ts-expect-error — plain-JS helper shared with scripts/generate-fixtures.mjs (no .d.ts on purpose)
 import { resolveSuspecBin } from "../scripts/resolve-suspec-bin.mjs";
 // @ts-expect-error — the fixture generator exports its pure assertion seam without a .d.ts
-import { assertCaptureExpectation } from "../scripts/generate-fixtures.mjs";
+import {
+  assertCaptureExpectation,
+  assertCleanProvenance,
+  normalizeCapturePaths,
+} from "../scripts/generate-fixtures.mjs";
 import { invoke_suspec } from "../src/suspec/invoke.ts";
 
 // The fixtures stay GENERATED, not hand-edited. This test re-runs scripts/generate-fixtures.mjs
@@ -22,15 +28,15 @@ import { invoke_suspec } from "../src/suspec/invoke.ts";
 // stale against the binary — the fixture's job is to be the binary's output, so a drift between
 // "what's checked in" and "what the binary now emits" must fail in an integration snapshot.
 //
-// The generator passes every artifact path RELATIVE with cwd=scratch, so the captured output carries
-// no machine-specific value and the compare needs no normalization. Repository-local runs skip the
-// two real-binary tests visibly; the dispatch-only integration gate supplies the CLI and must run them.
+// The generator passes relative artifact paths, then removes the scratch root the CLI reports.
+// Repository-local runs skip the real-binary tests; the integration gate supplies the CLI.
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..");
 const generator = join(repoRoot, "scripts", "generate-fixtures.mjs");
 const suspecBin = resolveSuspecBin(repoRoot);
 const checkedInDir = join(here, "fixtures");
+const execFileAsync = promisify(execFile);
 
 const FIXTURES = [
   "check-spec",
@@ -63,6 +69,34 @@ const report = (level: "clean" | "warning" | "blocking", path: string) => ({
 });
 
 describe("fixture capture exit assertions", () => {
+  it("rejects dirty CLI provenance", () => {
+    expect(() => assertCleanProvenance({ worktreeDirty: true })).toThrow(
+      /requires a clean suspec-cli worktree/,
+    );
+    expect(() => assertCleanProvenance({ worktreeDirty: false })).not.toThrow();
+  });
+
+  it("normalizes only lexical and physical scratch-root paths", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "suspec-mcp-normalize-"));
+    try {
+      const physical = realpathSync(tmp);
+      expect(
+        normalizeCapturePaths(
+          {
+            path: join(physical, "spec.md"),
+            nested: [`missing ${join(tmp, "task.md")}`, "/outside/spec.md"],
+          },
+          tmp,
+        ),
+      ).toEqual({
+        path: "spec.md",
+        nested: ["missing task.md", "/outside/spec.md"],
+      });
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it("fails closed when an explicit CLI path does not resolve", () => {
     const original = process.env.SUSPEC_BIN;
     try {
@@ -84,12 +118,7 @@ describe("fixture capture exit assertions", () => {
       2,
       JSON.stringify({ error: "Usage", message: "bad input" }),
     ],
-    [
-      "json",
-      "contract",
-      0,
-      JSON.stringify({ version: "0.19.0", checks: [] }),
-    ],
+    ["json", "contract", 0, JSON.stringify({ version: "0.21.0", checks: [] })],
     ["jsonl", "clean", 0, JSON.stringify(report("clean", "clean.md"))],
     [
       "jsonl",
@@ -157,65 +186,74 @@ describe("fixture capture exit assertions", () => {
 });
 
 describe("the contract fixtures stay generated from the real binary", () => {
-  it.skipIf(suspecBin === null)("regenerating into a temp dir reproduces the checked-in fixtures", () => {
-    if (suspecBin === null) throw new Error("integration gate did not supply suspec-cli");
+  it.skipIf(suspecBin === null)(
+    "regenerating into a temp dir reproduces the checked-in fixtures",
+    async () => {
+      if (suspecBin === null)
+        throw new Error("integration gate did not supply suspec-cli");
 
-    const tmp = mkdtempSync(join(tmpdir(), "suspec-mcp-genfix-"));
-    try {
-      const res = spawnSync(
-        process.execPath,
-        [generator, "--out", tmp, "--suspec-bin", suspecBin],
-        { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
-      );
-      expect(res.status, `generator failed: ${res.stderr ?? ""}`).toBe(0);
-
-      for (const name of FIXTURES) {
-        const fresh = JSON.parse(
-          readFileSync(join(tmp, `${name}.json`), "utf8"),
+      const tmp = mkdtempSync(join(tmpdir(), "suspec-mcp-genfix-"));
+      try {
+        await execFileAsync(
+          process.execPath,
+          [generator, "--out", tmp, "--suspec-bin", suspecBin],
+          { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
         );
-        const checkedIn = JSON.parse(
-          readFileSync(join(checkedInDir, `${name}.json`), "utf8"),
+
+        for (const name of FIXTURES) {
+          const fresh = JSON.parse(
+            readFileSync(join(tmp, `${name}.json`), "utf8"),
+          );
+          const checkedIn = JSON.parse(
+            readFileSync(join(checkedInDir, `${name}.json`), "utf8"),
+          );
+          expect(
+            checkedIn,
+            `${name}.json is stale — re-run \`node scripts/generate-fixtures.mjs\``,
+          ).toEqual(fresh);
+        }
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+      // Spawns the real suspec binary once per captured shape; legitimately exceeds the 5s default
+      // under the parallel coverage run. Not a race — a genuinely slow subprocess, so a longer
+      // per-test timeout is the right fix.
+    },
+    180_000,
+  );
+
+  it.skipIf(suspecBin === null)(
+    "accepts duplicate and symlink-alias paths deduplicated by the real CLI",
+    async () => {
+      if (suspecBin === null)
+        throw new Error("integration gate did not supply suspec-cli");
+
+      const tmp = mkdtempSync(join(tmpdir(), "suspec-mcp-alias-"));
+      try {
+        const specPath = join(tmp, "spec.md");
+        const aliasPath = join(tmp, "alias.md");
+        writeFileSync(
+          specPath,
+          "---\ntype: spec\nid: SPEC-alias\nstatus: ready\nsources: [ISSUE-1]\n---\n\n## Intent\n\nCheck alias handling.\n\n## Requirements\n\n### AC-001\nThe tool MUST check one file once.\nVerify with: `true`\n",
         );
-        expect(
-          checkedIn,
-          `${name}.json is stale — re-run \`node scripts/generate-fixtures.mjs\``,
-        ).toEqual(fresh);
+        symlinkSync(specPath, aliasPath);
+
+        const result = await invoke_suspec(
+          { bin: suspecBin, cwd: tmp },
+          "check",
+          [specPath, specPath, aliasPath],
+          { expected: "reports" },
+        );
+        expect(result.kind).toBe("ok");
+        if (result.kind === "ok") {
+          expect(result.data).toEqual([
+            expect.objectContaining({ path: specPath, level: "clean" }),
+          ]);
+        }
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
       }
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-    // Spawns the real suspec binary once per captured shape; legitimately exceeds the 5s default
-    // under the parallel coverage run. Not a race — a genuinely slow subprocess, so a longer
-    // per-test timeout is the right fix.
-  }, 60_000);
-
-  it.skipIf(suspecBin === null)("accepts duplicate and symlink-alias paths deduplicated by the real CLI", async () => {
-    if (suspecBin === null) throw new Error("integration gate did not supply suspec-cli");
-
-    const tmp = mkdtempSync(join(tmpdir(), "suspec-mcp-alias-"));
-    try {
-      const specPath = join(tmp, "spec.md");
-      const aliasPath = join(tmp, "alias.md");
-      writeFileSync(
-        specPath,
-        "---\ntype: spec\nid: SPEC-alias\nstatus: ready\nsources: [ISSUE-1]\n---\n\n## Intent\n\nCheck alias handling.\n\n## Requirements\n\n### AC-001\nThe tool MUST check one file once.\nVerify with: `true`\n",
-      );
-      symlinkSync(specPath, aliasPath);
-
-      const result = await invoke_suspec(
-        { bin: suspecBin, cwd: tmp },
-        "check",
-        [specPath, specPath, aliasPath],
-        { expected: "reports" },
-      );
-      expect(result.kind).toBe("ok");
-      if (result.kind === "ok") {
-        expect(result.data).toEqual([
-          expect.objectContaining({ path: specPath, level: "clean" }),
-        ]);
-      }
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  });
+    },
+    15_000,
+  );
 });

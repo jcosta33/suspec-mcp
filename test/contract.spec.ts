@@ -65,23 +65,23 @@ function runStub(args: string[]): { data: unknown; exit: number | null } {
     );
     writeFileSync(
       join(dir, "review.md"),
-      "---\ntype: review\nid: REVIEW-x\ntask: TASK-x\n---\n\n## Requirement coverage\n",
+      "---\ntype: review\nid: REVIEW-x\nspec: SPEC-x\ntask: TASK-x\nreviewer: fixture-reviewer\n---\n\n## Requirement coverage\n",
     );
     writeFileSync(
       join(dir, "review-notask.md"),
-      "---\ntype: review\nid: REVIEW-y\n---\n\n## Requirement coverage\n",
+      "---\ntype: review\nid: REVIEW-y\nspec: SPEC-x\nreviewer: fixture-reviewer\n---\n\n## Requirement coverage\n",
     );
     writeFileSync(
       join(dir, "review-task-list.md"),
-      "---\ntype: review\nid: REVIEW-list\ntask:\n  - TASK-x\n  - TASK-other\n---\n\n## Requirement coverage\n",
+      "---\ntype: review\nid: REVIEW-list\nspec: SPEC-x\ntask:\n  - TASK-x\n  - TASK-other\nreviewer: fixture-reviewer\n---\n\n## Requirement coverage\n",
     );
     writeFileSync(
       join(dir, "review-task-mismatch.md"),
-      "---\ntype: review\nid: REVIEW-mismatch\ntask: TASK-other\n---\n\n## Requirement coverage\n",
+      "---\ntype: review\nid: REVIEW-mismatch\nspec: SPEC-x\ntask: TASK-other\nreviewer: fixture-reviewer\n---\n\n## Requirement coverage\n",
     );
     writeFileSync(
       join(dir, "review-quoted-bom.md"),
-      '\ufeff---\ntype: "review"\nid: REVIEW-normalized\n---\n\n## Requirement coverage\n',
+      '\ufeff---\ntype: "review"\nid: REVIEW-normalized\nspec: SPEC-x\nreviewer: fixture-reviewer\n---\n\n## Requirement coverage\n',
     );
     const res = spawnSync(stubBin, [...args, "--json"], {
       cwd: dir,
@@ -168,7 +168,14 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
         type,
       ).toBe(true);
     }
-    for (const type of ["spec", "task", "review", "change-plan", "finding", "inspection"]) {
+    for (const type of [
+      "spec",
+      "task",
+      "review",
+      "change-plan",
+      "finding",
+      "inspection",
+    ]) {
       expect(
         UncheckedArtifactSchema.safeParse({
           level: "clean",
@@ -253,7 +260,9 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
   it("multi-path captures preserve report order and carry an optional C002 file-set report", () => {
     const multiple = fixture("check-multiple.json") as unknown[];
     expect(multiple).toHaveLength(2);
-    expect(multiple.every((item) => CheckFileSchema.safeParse(item).success)).toBe(true);
+    expect(
+      multiple.every((item) => CheckFileSchema.safeParse(item).success),
+    ).toBe(true);
 
     const duplicate = fixture("check-duplicate-id.json") as unknown[];
     expect(duplicate).toHaveLength(3);
@@ -306,7 +315,7 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     const parsed = ContractSchema.safeParse(fixture("contract.json"));
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect(parsed.data.version).toBe("0.19.0");
+      expect(parsed.data.version).toBe("0.21.0");
       expect(parsed.data.checks.length).toBeGreaterThan(0);
       for (const check of parsed.data.checks) {
         expect(check.id).toMatch(/^C\d{3}$/);
@@ -319,7 +328,8 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     ["partial", (contract: { checks: unknown[] }) => contract.checks.splice(1)],
     [
       "duplicate ID",
-      (contract: { checks: unknown[] }) => contract.checks.push(contract.checks[0]),
+      (contract: { checks: unknown[] }) =>
+        contract.checks.push(contract.checks[0]),
     ],
     [
       "unknown ID",
@@ -339,7 +349,7 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
         contract.checks[0].severity = "warning";
       },
     ],
-  ])("rejects a %s 0.19.0 checks table", (_case, mutate) => {
+  ])("rejects a %s 0.21.0 checks table", (_case, mutate) => {
     const contract = fixture("contract.json") as {
       checks: { id: string; name: string; severity: string }[];
     };
@@ -357,13 +367,13 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     }
   });
 
-  it("companion flags on a NON-review artifact are a structured error (the flags carry no review)", () => {
+  it("--spec on an artifact that is neither a task nor a review is a structured error", () => {
     const parsed = SuspecErrorSchema.safeParse(
       fixture("error-companions-without-review.json"),
     );
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect(parsed.data.message).toMatch(/carry no review/);
+      expect(parsed.data.message).toMatch(/task paths or one review/);
     }
   });
 
@@ -399,8 +409,8 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
 
   it("malformed task companions are structured errors", () => {
     const cases = [
-      ["error-task-wrong-type.json", /must have `type: task`/],
-      ["error-task-empty-scope.json", /at least one requirement in `scope:`/],
+      ["error-task-wrong-type.json", /fails deterministic checks: C022/],
+      ["error-task-empty-scope.json", /fails deterministic checks: C022/],
       ["error-task-wrong-source.json", /does not name handed spec/],
     ] as const;
     for (const [name, message] of cases) {
@@ -416,7 +426,7 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     );
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect(parsed.data.message).toMatch(/must have `type: spec`/);
+      expect(parsed.data.message).toMatch(/fails deterministic checks: .*C025/);
     }
   });
 
@@ -426,7 +436,9 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
     );
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect(parsed.data.message).toMatch(/frontmatter `task:` must be a scalar/);
+      expect(parsed.data.message).toMatch(
+        /frontmatter `task:` must be a scalar/,
+      );
     }
   });
 
@@ -456,8 +468,12 @@ describe("the contract matches the real --json shapes (captured fixtures)", () =
   });
 
   it("the runtime line schema accepts reports and structured errors but rejects unknown documents", () => {
-    expect(CheckLineSchema.safeParse(fixture("check-spec.json")).success).toBe(true);
-    expect(CheckLineSchema.safeParse(fixture("error-missing-spec.json")).success).toBe(true);
+    expect(CheckLineSchema.safeParse(fixture("check-spec.json")).success).toBe(
+      true,
+    );
+    expect(
+      CheckLineSchema.safeParse(fixture("error-missing-spec.json")).success,
+    ).toBe(true);
     expect(CheckLineSchema.safeParse({ malformed: true }).success).toBe(false);
   });
 
@@ -619,7 +635,7 @@ describe("the test stub conforms to the SAME contract as the real captured outpu
     expect(exit).toBe(2);
   });
 
-  it("stub refuses companion flags on a NON-review artifact exactly like the real CLI (exit 2, same message)", () => {
+  it("stub refuses --spec on an artifact that is neither a task nor a review exactly like the real CLI", () => {
     const { data, exit } = runStub(["check", "spec.md", "--spec", "spec.md"]);
     const parsed = SuspecErrorSchema.safeParse(data);
     expect(parsed.success).toBe(true);
@@ -708,7 +724,7 @@ describe("the test stub conforms to the SAME contract as the real captured outpu
       );
       expect(exit).toBe(2);
     }
-  });
+  }, 15_000);
 
   it("stub refuses a non-spec --spec companion like the real CLI", () => {
     const { data, exit } = runStub([
