@@ -7,7 +7,7 @@
 
 import { z } from "zod";
 
-export const SUPPORTED_CONTRACT_VERSION = "0.21.0" as const;
+export const SUPPORTED_CONTRACT_VERSION = "0.22.0" as const;
 
 export const SUPPORTED_CHECKS = [
   { id: "C001", name: "unique-ids", severity: "hard-error" },

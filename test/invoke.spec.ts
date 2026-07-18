@@ -803,7 +803,7 @@ describe("checks-contract compatibility probe", () => {
     );
     try {
       await expect(require_supported_contract(env(child.bin))).rejects.toThrow(
-        /checks contract 0\.21\.0.*exit 0/i,
+        /checks contract 0\.22\.0.*exit 0/i,
       );
     } finally {
       child.cleanup();

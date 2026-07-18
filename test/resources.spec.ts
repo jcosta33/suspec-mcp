@@ -100,7 +100,7 @@ describe("suspec-mcp resources", () => {
         version: string;
         checks: { id: string }[];
       };
-      expect(parsed.version).toBe("0.21.0");
+      expect(parsed.version).toBe("0.22.0");
       expect(parsed.checks.length).toBeGreaterThan(0);
       expect(invocations()).toEqual([
         ["check", "--contract", "--json"],
@@ -147,7 +147,7 @@ describe("suspec-mcp resources", () => {
   it("refuses startup when the CLI contract version is not exactly supported", async () => {
     await expect(
       create_server({ env: { bin: oldContractBin, cwd: root } }),
-    ).rejects.toThrow(/checks contract 0\.21\.0/);
+    ).rejects.toThrow(/checks contract 0\.22\.0/);
   });
 
   it.each(malformedContracts)(
@@ -156,7 +156,7 @@ describe("suspec-mcp resources", () => {
       await expect(
         create_server({ env: { bin: join(fixtures, name), cwd: root } }),
       ).rejects.toThrow(
-        new RegExp(`checks contract 0\\.21\\.0.*${structuralError.source}`),
+        new RegExp(`checks contract 0\\.22\\.0.*${structuralError.source}`),
       );
     },
   );

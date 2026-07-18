@@ -1,7 +1,7 @@
 # suspec-mcp
 
 A thin MCP stdio adapter for shell-less access to Suspec's deterministic checker. Thin is the feature.
-It requires checks contract `0.21.0`, validates every CLI JSON payload, and preserves ordered reports
+It requires checks contract `0.22.0`, validates every CLI JSON payload, and preserves ordered reports
 and exit status.
 
 ## Tools
@@ -32,7 +32,7 @@ Every artifact result repeats its type. Only the optional final `(file set)` rep
 Returns the contract version plus each core check's ID and severity in concise mode. Use
 `responseFormat: "detailed"` for names. The same contract is available at `suspec://checks`.
 
-Startup and resource reads require exact contract `0.21.0` at exit 0. Resource failure throws instead
+Startup and resource reads require exact contract `0.22.0` at exit 0. Resource failure throws instead
 of returning an error document as resource content.
 
 ## Envelope
