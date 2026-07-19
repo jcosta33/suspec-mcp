@@ -1,5 +1,5 @@
 {
-  "version": "0.22.0",
+  "version": "0.23.0",
   "checks": [
     {
       "id": "C001",
@@ -19,7 +19,7 @@
     {
       "id": "C004",
       "name": "one-strength-word",
-      "severity": "warning"
+      "severity": "hard-error"
     },
     {
       "id": "C007",
@@ -109,6 +109,11 @@
     {
       "id": "C027",
       "name": "review-spec-ref",
+      "severity": "hard-error"
+    },
+    {
+      "id": "C028",
+      "name": "requirement-shape",
       "severity": "hard-error"
     }
   ]

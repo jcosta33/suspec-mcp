@@ -295,7 +295,7 @@ for (const artifact of artifacts) {
     level: "warning",
     path: artifact.file,
     diagnostics: [
-      { code: "C004", severity: "warning", message: "demo", line: 1 },
+      { code: "C008", severity: "warning", message: "demo", line: 1 },
     ],
   });
   status = Math.max(status, 1);

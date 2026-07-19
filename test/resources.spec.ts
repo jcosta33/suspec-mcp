@@ -7,6 +7,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { create_server } from "../src/server.ts";
+import { SUPPORTED_CONTRACT_VERSION } from "../src/suspec/contract.ts";
 
 // Exercises the resource surface — ONE fixed URI, the checks contract — over the in-memory
 // transport, against the stub. STUB_LOG records every subprocess argv.
@@ -21,7 +22,7 @@ const contractExitAfterProbeBin = join(
 );
 const malformedContracts = [
   ["empty-contract-suspec.mjs", /missing check ID C001/],
-  ["partial-contract-suspec.mjs", /missing check ID C027/],
+  ["partial-contract-suspec.mjs", /missing check ID C028/],
   ["duplicate-contract-suspec.mjs", /duplicate check ID C001/],
   ["unknown-contract-suspec.mjs", /unknown check ID C999/],
   ["corrupted-contract-suspec.mjs", /must be named unique-ids/],
@@ -100,7 +101,7 @@ describe("suspec-mcp resources", () => {
         version: string;
         checks: { id: string }[];
       };
-      expect(parsed.version).toBe("0.22.0");
+      expect(parsed.version).toBe("0.23.0");
       expect(parsed.checks.length).toBeGreaterThan(0);
       expect(invocations()).toEqual([
         ["check", "--contract", "--json"],
@@ -147,7 +148,9 @@ describe("suspec-mcp resources", () => {
   it("refuses startup when the CLI contract version is not exactly supported", async () => {
     await expect(
       create_server({ env: { bin: oldContractBin, cwd: root } }),
-    ).rejects.toThrow(/checks contract 0\.22\.0/);
+    ).rejects.toThrow(
+      new RegExp(`checks contract ${SUPPORTED_CONTRACT_VERSION.replaceAll(".", "\\.")}`),
+    );
   });
 
   it.each(malformedContracts)(
@@ -156,7 +159,9 @@ describe("suspec-mcp resources", () => {
       await expect(
         create_server({ env: { bin: join(fixtures, name), cwd: root } }),
       ).rejects.toThrow(
-        new RegExp(`checks contract 0\\.22\\.0.*${structuralError.source}`),
+        new RegExp(
+          `checks contract ${SUPPORTED_CONTRACT_VERSION.replaceAll(".", "\\.")}.*${structuralError.source}`,
+        ),
       );
     },
   );

@@ -118,7 +118,7 @@ describe("fixture capture exit assertions", () => {
       2,
       JSON.stringify({ error: "Usage", message: "bad input" }),
     ],
-    ["json", "contract", 0, JSON.stringify({ version: "0.22.0", checks: [] })],
+    ["json", "contract", 0, JSON.stringify({ version: "0.23.0", checks: [] })],
     ["jsonl", "clean", 0, JSON.stringify(report("clean", "clean.md"))],
     [
       "jsonl",
@@ -234,7 +234,7 @@ describe("the contract fixtures stay generated from the real binary", () => {
         const aliasPath = join(tmp, "alias.md");
         writeFileSync(
           specPath,
-          "---\ntype: spec\nid: SPEC-alias\nstatus: ready\nsources: [ISSUE-1]\n---\n\n## Intent\n\nCheck alias handling.\n\n## Requirements\n\n### AC-001\nThe tool MUST check one file once.\nVerify with: `true`\n",
+          "---\ntype: spec\nid: SPEC-alias\nstatus: ready\nsources: [ISSUE-1]\n---\n\n## Intent\n\nCheck alias handling.\n\n## Requirements\n\n### AC-001\n- When: duplicate or aliased paths name one file\n- Then: the tool MUST check that file once\n- Verify with: `true`\n",
         );
         symlinkSync(specPath, aliasPath);
 

@@ -16,7 +16,7 @@ describe("slice_check_results", () => {
         level: "warning",
         path: "specs/a/spec.md",
         diagnostics: [
-          { code: "C004", severity: "warning", message: "demo", line: 1 },
+          { code: "C008", severity: "warning", message: "demo", line: 1 },
         ],
       },
     ]) as { type: string; level: string; path: string; diagnostics: { code: string; line?: number }[] }[];
@@ -24,7 +24,7 @@ describe("slice_check_results", () => {
     expect(out[0].level).toBe("warning");
     expect(out[0].path).toBe("specs/a/spec.md");
     expect(out[0].diagnostics[0]).toEqual({
-      code: "C004",
+      code: "C008",
       severity: "warning",
       message: "demo",
       line: 1,
@@ -74,25 +74,25 @@ describe("slice_check_results", () => {
 describe("slice_contract", () => {
   it("keeps version + each check's {id, severity}; drops the human-readable name", () => {
     const out = slice_contract({
-      version: "0.22.0",
+      version: "0.23.0",
       checks: [{ id: "C001", name: "unique-ids", severity: "hard-error" }],
     }) as { version: string; checks: Record<string, unknown>[] };
-    expect(out.version).toBe("0.22.0");
+    expect(out.version).toBe("0.23.0");
     expect(out.checks[0]).toEqual({ id: "C001", severity: "hard-error" });
   });
 
   it("falls back on a non-object payload and tolerates a malformed check", () => {
     expect(slice_contract(undefined)).toBe(undefined);
     expect(slice_contract("nope")).toBe("nope");
-    const out = slice_contract({ version: "0.22.0", checks: [null] }) as {
+    const out = slice_contract({ version: "0.23.0", checks: [null] }) as {
       checks: unknown[];
     };
     expect(out.checks).toHaveLength(1);
   });
 
   it("defaults an absent checks list to [] (the as_array fallback) instead of throwing", () => {
-    expect(slice_contract({ version: "0.22.0" })).toEqual({
-      version: "0.22.0",
+    expect(slice_contract({ version: "0.23.0" })).toEqual({
+      version: "0.23.0",
       checks: [],
     });
   });

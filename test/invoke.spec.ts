@@ -70,7 +70,7 @@ function reportForLevel(level: "clean" | "warning" | "blocking", path: string) {
       ? []
       : [
           {
-            code: level === "warning" ? "C004" : "C021",
+            code: level === "warning" ? "C008" : "C021",
             severity: level === "warning" ? "warning" : "hard-error",
             message: "demo",
             line: null,
@@ -803,7 +803,7 @@ describe("checks-contract compatibility probe", () => {
     );
     try {
       await expect(require_supported_contract(env(child.bin))).rejects.toThrow(
-        /checks contract 0\.22\.0.*exit 0/i,
+        new RegExp(`checks contract ${SUPPORTED_CONTRACT_VERSION.replaceAll(".", "\\.")}.*exit 0`, "i"),
       );
     } finally {
       child.cleanup();

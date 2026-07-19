@@ -402,7 +402,7 @@ describe("suspec-mcp server", () => {
           responseFormat: string;
         };
       };
-      expect(result.structuredContent.data.version).toBe("0.22.0");
+      expect(result.structuredContent.data.version).toBe("0.23.0");
       expect(result.structuredContent.responseFormat).toBe("detailed");
       expect(invocations()).toEqual([["check", "--contract", "--json"]]);
     } finally {
@@ -440,7 +440,7 @@ describe("suspec-mcp server", () => {
           level: "warning",
           path: artifactPath("specs/a.md"),
           diagnostics: [
-            { code: "C004", severity: "warning", message: "demo", line: 1 },
+            { code: "C008", severity: "warning", message: "demo", line: 1 },
           ],
         },
       ]);

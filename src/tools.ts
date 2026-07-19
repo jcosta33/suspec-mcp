@@ -61,6 +61,7 @@ export function register_tools(server: McpServer, ctx: Ctx): void {
     {
       title: "Check Suspec artifacts",
       description:
+        "Validate a spec, task, review, or change plan after authoring or before finalizing it. " +
         "Run one `suspec check` process over an ordered non-empty array of absolute artifact paths. " +
         "Batching enables cross-file checks such as C002. Task paths require one absolute specPath. " +
         "A review must be the only primary path and may also receive taskPath. Returns CLI reports in order.",
